@@ -32,7 +32,7 @@ The route map, separate status dashboard, and full match sidebar are removed fro
 - Keep status controls on cards so hosts/admins can still mark posts as open, pending, matched, or full. The database still stores the final match status as `committed`.
 - Require a contact marker before anyone can mark a match, so attendees contact each other first by email or phone and only record a match after mutual agreement.
 - Let carpool drivers finalize carpool matches. For Uber/Lyft split groups, let either the organizer or the contacted participant mark the match once contact has been recorded.
-- Do not send app-generated email notifications. The simple branch relies on visible email/phone links and honest contact-tracking language instead of a transactional email provider.
+- Do not send app-generated email notifications. The app relies on visible email/phone reveal controls and honest contact-tracking language instead of a transactional email provider.
 - Keep `Matched` out of the ordinary status dropdown for unmatched posts; users should reach that state through `Mark matched`.
 - Hide post status controls from people who do not own the post unless they are admins.
 
@@ -47,4 +47,4 @@ The route map, separate status dashboard, and full match sidebar are removed fro
 
 ## What This Branch Is For
 
-This branch is meant for stakeholder review of the simpler interaction model. It is not a rejection of the fuller app; it is a lower-friction version that can be compared against the richer dashboard on `main`.
+This plan records the simpler interaction model that has now become the primary app direction on `main`. It is not a rejection of the earlier fuller dashboard; it documents the lower-friction version chosen for future development.

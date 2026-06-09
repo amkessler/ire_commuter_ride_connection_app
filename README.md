@@ -1,6 +1,6 @@
 # IRE Ride Connection App
 
-React/Vite app for coordinating conference rides to National Harbor, Maryland from DC, Virginia, and Maryland. The `simple_version` branch keeps the richer matching model but presents it as a lighter connection board for stakeholder review.
+React/Vite app for coordinating conference rides to National Harbor, Maryland from DC, Virginia, and Maryland. The current app keeps the richer matching model but presents it as a lighter connection board for attendee use and stakeholder review.
 
 ## Current Product Shape
 

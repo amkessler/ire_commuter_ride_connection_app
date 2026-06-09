@@ -8,7 +8,7 @@ A spreadsheet can tell you that Maya is offering two seats and Jon needs a ride.
 
 Think of it less like a signup form and more like a connection board for conference commuting.
 
-This branch, `simple_version`, is the intentionally calmer version of the app. The richer dashboard still informed the model, but this version asks users to do two main things: describe their ride plan, then review likely matches. It is meant to answer a stakeholder question: "What would this look like if we made the interface much simpler?"
+The current app is the intentionally calmer version of the ride connection idea. The richer dashboard still informed the model, but this version asks users to do two main things: describe their ride plan, then review likely matches. It grew out of a stakeholder question: "What would this look like if we made the interface much simpler?"
 
 People are not just entries. They are moving parts:
 
@@ -427,7 +427,7 @@ The app uses these statuses:
 - `committed`
 - `full`
 
-This is more useful than a simple yes/no. One naming detail matters: the database value is still `committed` because that was the first implementation name, but the simple branch presents that state to users as `matched`.
+This is more useful than a simple yes/no. One naming detail matters: the database value is still `committed` because that was the first implementation name, but the app presents that state to users as `matched`.
 
 Real coordination has gray areas. Someone might have asked about a ride but not confirmed. A driver might have two riders matched but still have one carpool seat. A rideshare group might have three people but room for a fourth.
 
@@ -658,7 +658,7 @@ There is no giant hero section. There is no decorative pitch copy. The first scr
 
 The first version put almost everything on one dashboard. It worked, but it felt busy. That was useful feedback: the app was doing the right things, but it was asking users to absorb too much at once.
 
-The fuller branch explored a tabbed dashboard. The simple branch deliberately steps back from that and uses two main areas:
+An earlier fuller version explored a tabbed dashboard. The current app deliberately steps back from that and uses two main areas:
 
 - `Your plan`: enter or update the one ride profile tied to the user.
 - `Likely matches`: browse the best open carpool offers, carpool requests, and Uber/Lyft split groups.
@@ -681,7 +681,7 @@ This matches the user's workflow:
 
 The app uses cards for individual rides, which makes sense because each ride is a repeated item with its own status, people, capacity, and actions.
 
-The simple branch keeps each ride card summary-first. The card shows the ride type, route area, trip slots, capacity, contact buttons, and next action immediately. Longer notes and contact/match history live behind `Details and history`, which keeps the board from feeling like every card is shouting at once.
+The current app keeps each ride card summary-first. The card shows the ride type, route area, trip slots, capacity, contact buttons, and next action immediately. Longer notes and contact/match history live behind `Details and history`, which keeps the board from feeling like every card is shouting at once.
 
 The app avoids nested cards and keeps the main dashboard organized with clear panels.
 
@@ -936,7 +936,7 @@ Inquire
 Commit
 ```
 
-The simple branch later changed the user-facing final action again to "Mark matched," because that better reflects the new rule that people should talk first and only record the match afterward.
+The current app later changed the user-facing final action again to "Mark matched," because that better reflects the new rule that people should talk first and only record the match afterward.
 
 It also changed "Inquire" into "Record contact" or "Record help offer." That is a more honest label when the app is not sending automated email, and it makes clear that the button records something the user did outside the app.
 
@@ -1185,7 +1185,7 @@ How to avoid trouble:
 
 ## Pitfall: Contact Info Is Sensitive
 
-The simple branch lets attendees reveal email or phone details on a card so they can coordinate before marking a match.
+The app lets attendees reveal email or phone details on a card so they can coordinate before marking a match.
 
 That may be right for a controlled attendee group. It may not be right for a fully public app.
 
