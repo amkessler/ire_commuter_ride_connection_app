@@ -25,3 +25,22 @@ Before relying on admin tools:
 3. Use `Set up admin MFA` if no TOTP factor exists.
 4. Verify an authenticator code.
 5. Confirm admin-only tools can load after verification.
+
+## Ride Notification Emails
+
+Inquiry, offer-help, and match emails are sent by the `send-ride-notification` Supabase Edge Function. Local code changes are not enough; the function must be deployed and configured in the linked Supabase project.
+
+Before public testing:
+
+1. Confirm migrations are current with `supabase migration list`.
+2. Apply pending workflow migrations with `supabase db push --dry-run` and then `supabase db push`.
+3. Deploy the function with `supabase functions deploy send-ride-notification`.
+4. Set function secrets:
+
+```bash
+supabase secrets set RESEND_API_KEY=... NOTIFICATION_FROM_EMAIL='IRE Ride Connection <rides@example.org>' APP_PUBLIC_URL='https://your-app-url.example'
+```
+
+5. Send a test inquiry from one signed-in account to another and confirm the recipient receives email.
+
+`APP_PUBLIC_URL` is optional, but it should be set before production launch so notification emails point users back to the live app.

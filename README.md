@@ -1,47 +1,39 @@
 # IRE Ride Connection App
 
-React/Vite app for coordinating conference rides to National Harbor, Maryland from DC, Virginia, and Maryland. It supports signed-out sample mode for demos and Supabase-backed signed-in mode for shared data.
+React/Vite app for coordinating conference rides to National Harbor, Maryland from DC, Virginia, and Maryland. The `simple_version` branch keeps the richer matching model but presents it as a lighter connection board for stakeholder review.
 
-## Product Plan
+## Current Product Shape
 
-### Goal
+The app has two primary areas:
 
-Create a practical coordination board where IRE attendees can:
+- `Your plan`: one form where a signed-in attendee creates or edits their single ride profile.
+- `Likely matches`: a compact list of relevant carpool offers, carpool requests, and Uber/Lyft split groups.
 
-- Post whether they are offering a carpool seat, looking for a carpool seat, or looking to split an Uber/Lyft.
-- Declare their neighborhood, regional corridor, trip availability, and contact details.
-- See potential matches that are realistic for the route to National Harbor.
-- Track whether a ride is still open, filling, pending, committed, or full.
-- Distinguish between tighter driver route constraints and more flexible rideshare split matches.
+Users can share direct contact details, send an inquiry or offer help, and then mark a match only after there has been contact. The UI deliberately avoids letting someone instantly commit to another attendee's ride without a prior inquiry.
 
-### Current Version
+The workflow rules are:
 
-The app now includes:
+- Carpool drivers can mark final matches for their own carpool offers.
+- For carpool requests, a potential helper must offer help before the request can be marked matched.
+- For Uber/Lyft split groups, either the organizer or the inquiring participant can mark the group matched after an inquiry.
+- The database still stores `committed` as the final status value, but the simple UI presents that state as `matched`.
 
-- Four tabs: `Find rides`, `Add info`, `Route map`, and `Status`.
-- Supabase Auth with email one-time code sign-in.
-- Supabase Postgres tables for participants, public-safe participant directory rows, ride groups, memberships, inquiries, profiles, and admin users.
-- Row-level security policies so regular users can manage their own profile while admins can troubleshoot after MFA.
-- Admin MFA step-up: admin accounts can be recognized before MFA, but admin-only data/actions require an AAL2 session.
-- A uniqueness rule that prevents duplicate ride groups when a participant updates their profile.
-- Signed-out sample data and local storage fallback for prototype/demo use.
-
-### Core Data Model
+## Core Data Model
 
 `participant`
 
 - `name`, `email`, `phone`
 - `neighborhood`
 - `corridor`: regional route zone such as `dc-nw`, `dc-ne`, `arlington-alexandria`, `silver-spring-takoma`, `bethesda-rockville`, `pg-county`, `fairfax-falls-church`
-- `intent`: `offer`, `need-seat`, `split-rideshare`, or `both`
+- `intent`: `offer`, `need-seat`, `split-rideshare`, `offer-or-split`, or `need-or-split`
 - `transportPreference`: `carpool`, `rideshare`, or `either`
-- `seatsAvailable` and `maxPartySize`
-- `availability`: booleans for Thursday AM/PM, Friday AM/PM, Saturday AM/PM, Sunday AM
+- `seatsAvailable`, `seatsNeeded`, and `maxPartySize`
+- `availability`: booleans for Thursday AM/PM, Friday AM/PM, Saturday AM/PM, Sunday AM/PM
 - `notes`
 
 `rideGroup`
 
-- `type`: driver carpool or rideshare split
+- `type`: `carpool`, `carpool-request`, or `rideshare`
 - `hostId`
 - `riderIds`
 - `corridor`
@@ -49,28 +41,33 @@ The app now includes:
 - `capacity`
 - `status`: `open`, `pending`, `committed`, or `full`
 - `availability`
-- `inquiries`: participant IDs that have asked about the ride
+- `inquiries`: participant IDs that have asked about the ride or offered help
 
-### Matching Logic
+## Notifications
 
-The prototype scores each possible pairing using:
+The frontend calls a Supabase Edge Function named `send-ride-notification` after inquiry/offer-help actions and after matches are marked. Notification failure is logged but does not block the ride workflow.
+
+Email delivery requires the Edge Function to be deployed and configured:
+
+```bash
+supabase functions deploy send-ride-notification
+supabase secrets set RESEND_API_KEY=... NOTIFICATION_FROM_EMAIL='IRE Ride Connection <rides@example.org>' APP_PUBLIC_URL='https://your-app-url.example'
+```
+
+`APP_PUBLIC_URL` is optional but recommended so emails can link back to the app. The function uses Resend for outbound mail and Supabase Auth/RLS checks to confirm the actor owns the participant profile making the request.
+
+## Matching Logic
+
+The prototype scores possible pairings using:
 
 1. Shared trip slots.
 2. Regional corridor match.
 3. Corridor adjacency for nearby areas.
-4. Mode fit: carpool seekers match driver offers; rideshare split seekers match rideshare pools.
+4. Mode fit: carpool seekers match driver offers; drivers can respond to carpool requests; rideshare split seekers match rideshare pools.
 5. Route flexibility: driver carpools penalize off-route requests more than Uber/Lyft split groups.
-6. Capacity and status: full rides are visible but ranked below open or pending rides.
+6. Capacity and status: full or matched rides can remain visible but are ranked below open options.
 
-The route model is intentionally approximate for the prototype. A production version should geocode submitted neighborhoods and evaluate actual pickup detour time with a maps API.
-
-### Recommended Next Phases
-
-1. Route intelligence: add geocoding and detour estimates for National Harbor routes.
-2. Coordination safety: add private contact reveal, moderation, expiration, and update reminders.
-3. Admin workflow: add organizer review screens, exports, and duplicate/contact audit tools.
-4. Communication: add host approval flows and optional notifications.
-5. Deployment: connect the production URL, redirect settings, and any custom email provider.
+The route model is intentionally approximate. A production version should geocode submitted neighborhoods and evaluate actual pickup detour time with a maps API.
 
 ## Run
 
@@ -112,7 +109,7 @@ Security checks:
 supabase db advisors --linked --type security --level info
 ```
 
-The app intentionally exposes three authenticated RPCs: `get_my_role`, `request_join_ride`, and `commit_to_ride`. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
+The app intentionally exposes three authenticated RPCs: `get_my_role`, `request_join_ride`, and `commit_to_ride`. `commit_to_ride` now requires a prior inquiry and enforces the simple-version match rules. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
 
 Regular users sign in by email one-time code. The hosted Supabase email template has been updated through the Management API to send `{{ .Token }}` instead of a magic sign-in link.
 
@@ -142,5 +139,5 @@ Admin role and MFA behavior:
 
 Ride group duplicate prevention:
 
-- Each participant can host at most one carpool group and one rideshare group.
-- Updating a profile upserts the relevant hosted group instead of inserting another duplicate group.
+- Each participant can host at most one carpool offer group, one carpool request group, and one rideshare group.
+- Updating a profile upserts the relevant hosted groups instead of inserting duplicate groups.

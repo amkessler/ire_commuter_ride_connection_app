@@ -6,9 +6,9 @@ The simple version treats the app as a small connection board, not an operations
 
 1. Add or update one ride profile.
 2. Review likely matches.
-3. Email, call, inquire, or mark a match.
+3. Email, call, inquire, offer help, or mark a match after mutual agreement.
 
-The underlying ride logic stays intact, including Supabase auth, one profile per user, carpool offers, carpool requests, Uber/Lyft split groups, route scoring, and ride status.
+The underlying ride logic stays intact, including Supabase auth, one profile per user, carpool offers, carpool requests, Uber/Lyft split groups, route scoring, ride status, and notification hooks.
 
 ## Interface Direction
 
@@ -25,9 +25,10 @@ The route map, separate status dashboard, and full match sidebar are removed fro
 - Replace the old disabled-field explanation with one plain sentence under the ride-plan menu.
 - Keep search and corridor filtering, but reduce status filtering to "Available posts" or "All posts."
 - Make cards focus on connection essentials: ride type, corridor, neighborhood, trip slots, capacity/need, contact links, and one or two actions.
-- Keep status controls on cards so hosts/admins can still mark posts as open, pending, committed, or full.
+- Keep status controls on cards so hosts/admins can still mark posts as open, pending, matched, or full. The database still stores the final match status as `committed`.
 - Require an inquiry before anyone can mark a match, so attendees contact each other first by email or phone and only record a match after mutual agreement.
 - Let carpool drivers finalize carpool matches. For Uber/Lyft split groups, let either the organizer or the inquiring participant mark the match once there has been an inquiry.
+- Send email alerts for inquiries, offers to help, and marked matches through the `send-ride-notification` Supabase Edge Function after it is deployed and configured with email-provider secrets.
 
 ## What This Branch Is For
 

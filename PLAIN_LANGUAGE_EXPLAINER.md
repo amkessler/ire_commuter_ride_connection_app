@@ -6,15 +6,17 @@ The original idea started as a Google Sheet. That made sense at first: a sheet i
 
 A spreadsheet can tell you that Maya is offering two seats and Jon needs a ride. It cannot easily tell you whether Jon is reasonably on Maya's route, whether the car is already full, whether a ride is just being discussed, or whether a nearby Uber/Lyft group still has space. This app is the first version of a tool that can do those things.
 
-Think of it less like a signup form and more like an air traffic control board for conference commuting.
+Think of it less like a signup form and more like a connection board for conference commuting.
+
+This branch, `simple_version`, is the intentionally calmer version of the app. The richer dashboard still informed the model, but this version asks users to do two main things: describe their ride plan, then review likely matches. It is meant to answer a stakeholder question: "What would this look like if we made the interface much simpler?"
 
 People are not just entries. They are moving parts:
 
 - Where are they starting?
 - Are they driving, looking for a carpool seat, or trying to split an Uber/Lyft?
 - When are they going to and from the conference?
-- How many people are already committed?
-- Is this ride open, pending, committed, or full?
+- How many people are already matched?
+- Is this ride open, pending, matched, or full?
 - Would adding another person make the route unreasonable?
 
 The app is built around those questions.
@@ -23,11 +25,13 @@ The app is built around those questions.
 
 At a high level, the app has three jobs.
 
-First, it lets an attendee submit ride information. They can enter their name, contact details, neighborhood, regional corridor, availability, and whether they are offering a carpool seat, looking for a carpool seat, or trying to split an Uber/Lyft.
+First, it lets an attendee submit one ride profile. They can enter their name, contact details, neighborhood, regional corridor, availability, and whether they are offering a carpool seat, looking for a carpool seat, trying to split an Uber/Lyft, or open to one of the mixed options.
 
-Second, it displays active ride options. These are shown as ride cards. A card might represent a driver carpool, where a person has a car and a fixed number of carpool seats. Or it might represent a shared rideshare pool, where people are trying to split an Uber or Lyft.
+Second, it displays active ride options. These are shown as ride cards. A card might represent a driver carpool, where a person has a car and a fixed number of carpool seats. It might represent a carpool request, where someone needs a seat. Or it might represent a shared rideshare pool, where people are trying to split an Uber or Lyft.
 
 Third, it helps users judge fit. The app scores potential matches based on timing, route corridor, ride type, status, and capacity. A good match appears higher. A bad match, such as a driver having to make a major detour, gets pushed lower.
+
+Fourth, it supports a more careful coordination flow. A user can inquire or offer help, but they cannot simply force themselves into someone else's ride. A final match should happen only after the people involved contact each other and agree.
 
 The app now has two operating modes.
 
@@ -87,12 +91,15 @@ ire_ride_connection_app/
   SUPABASE_AUTH_CHECKLIST.md
   package.json
   package-lock.json
+  deno.lock
   index.html
   vite.config.js
   eslint.config.js
   .gitignore
   supabase/
     migrations/
+    functions/
+      send-ride-notification/
   src/
     main.jsx
     App.jsx
@@ -229,11 +236,13 @@ Example fields:
   intent: "offer",
   transportPreference: "carpool",
   seatsAvailable: 2,
+  seatsNeeded: 0,
   maxPartySize: 3,
   availability: {
     thuAm: true,
     thuPm: true,
-    friAm: true
+    friAm: true,
+    sunPm: true
   },
   notes: "Can pick up near Columbia Heights..."
 }
@@ -246,7 +255,8 @@ A person might:
 - Offer carpool seats.
 - Need a carpool seat.
 - Want to split an Uber/Lyft.
-- Be open to multiple options.
+- Be open to offering a carpool seat or splitting an Uber/Lyft.
+- Be open to seeking a carpool seat or splitting an Uber/Lyft.
 
 That distinction matters because the app needs to know when to create a group and when to simply add someone as a person looking for a ride.
 
@@ -265,15 +275,15 @@ Example:
   routeFlexibility: "moderate",
   capacity: 2,
   riderIds: ["p2"],
-  inquiries: [],
+  inquiries: ["p3"],
   status: "committed",
   availability: {...}
 }
 ```
 
-A group has a host. The host is linked by `hostId`.
+A group has a host. The host is linked by `hostId`. A group can be a driver carpool, a carpool request, or an Uber/Lyft split.
 
-That means the group does not copy Maya's full name, email, phone, and notes. It stores her ID. When the app needs Maya's details, it looks her up in the participants list.
+That means the group does not copy Maya's full name, email, phone, and notes. It stores her ID. When the app needs Maya's details, it looks her up in the participants list. In the database, the final match state is still stored as `committed`; in the simple interface, users see that idea as `matched`, which is clearer for the current workflow.
 
 This is a classic data-modeling pattern. Instead of duplicating the same information in multiple places, keep one source of truth and connect records by ID.
 
@@ -368,7 +378,7 @@ The score is based on:
 - Shared conference trip slots.
 - Same corridor or nearby corridor.
 - Whether the participant wants the type of ride being offered.
-- Whether the group is open, pending, committed, or full.
+- Whether the group is open, pending, matched, or full.
 - Whether the group has open spots.
 - Whether the route flexibility is tight, moderate, or flexible.
 
@@ -404,7 +414,7 @@ Then it checks ride type:
 Then it checks status:
 
 - Open groups get a boost.
-- Pending or committed groups can still appear.
+- Pending or matched groups can still appear.
 - Full groups are penalized.
 
 Finally, tight routes get extra penalties if the rider is not in the same corridor.
@@ -420,9 +430,9 @@ The app uses these statuses:
 - `committed`
 - `full`
 
-This is more useful than a simple yes/no.
+This is more useful than a simple yes/no. One naming detail matters: the database value is still `committed` because that was the first implementation name, but the simple branch presents that state to users as `matched`.
 
-Real coordination has gray areas. Someone might have asked about a ride but not confirmed. A driver might have two riders committed but still have one carpool seat. A rideshare group might have three people but room for a fourth.
+Real coordination has gray areas. Someone might have asked about a ride but not confirmed. A driver might have two riders matched but still have one carpool seat. A rideshare group might have three people but room for a fourth.
 
 The app models those gray areas.
 
@@ -436,15 +446,15 @@ Capacity works differently for the two group types.
 
 For a driver carpool, capacity means available carpool seats.
 
-If Maya offers two carpool seats and Jon has committed, the app says:
+If Maya offers two carpool seats and Jon has matched with that ride, the app says:
 
 ```text
-1/2 carpool seats committed
+1/2 carpool seats matched
 ```
 
 For an Uber/Lyft split, the host is part of the ride pool. If Sam starts a rideshare pool with a party cap of four, Sam already counts as one rider.
 
-So the app counts rideshare committed people as:
+So the app counts rideshare matched people as:
 
 ```js
 group.riderIds.length + 1
@@ -456,7 +466,7 @@ That `+ 1` is easy to miss, but it matters. It prevents the app from acting like
 
 The app still uses browser local storage when no Supabase session is active.
 
-That means a signed-out demo can add someone, mark an inquiry, or commit a rider, and those demo changes stay in that browser after a page refresh.
+That means a signed-out demo can add someone, mark an inquiry, or mark a match, and those demo changes stay in that browser after a page refresh.
 
 Local storage is like a notebook taped to your own laptop. It is useful while you are working, but nobody else can see it.
 
@@ -516,8 +526,8 @@ The main database tables are:
 - `participants`: the full ride profile for a signed-in user, including contact info.
 - `participant_directory`: a public-safe directory table that exposes only the fields needed for matching.
 - `ride_groups`: carpool and Uber/Lyft split groups.
-- `ride_memberships`: committed riders.
-- `ride_inquiries`: people who have asked about a ride but are not committed.
+- `ride_memberships`: final matched riders.
+- `ride_inquiries`: people who have asked about a ride or offered help but are not matched yet.
 - `admin_users`: the list of auth users who are allowed to become admins.
 
 The `participant_directory` table is worth calling out. Earlier, this was modeled as a view. The safer version is a real table with row-level security. A trigger keeps it synchronized with `participants`, but it does not expose private fields like phone numbers to every signed-in user.
@@ -559,9 +569,33 @@ The app uses a few Supabase RPC functions:
 - `request_join_ride`
 - `commit_to_ride`
 
-Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can ask to join or commit to a ride.
+Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can ask about a ride or record an agreed match.
+
+The `commit_to_ride` name is now a little historical. In the simple interface, the user-facing action is "mark matched." The RPC keeps the older name, but it now requires a prior inquiry and checks who is allowed to mark the match:
+
+- For driver carpools, the driver finalizes the match.
+- For carpool requests, a helper must offer help first.
+- For Uber/Lyft splits, either the organizer or the inquirer can mark the match after the inquiry exists.
 
 The important engineering rule is not "never use security-definer functions." The rule is "make them small, explicit, and carefully permission-checked."
+
+## Supabase Edge Function: Email Alerts
+
+The app also includes a Supabase Edge Function:
+
+```text
+supabase/functions/send-ride-notification/index.ts
+```
+
+This function sends email alerts after:
+
+- Someone sends an inquiry.
+- Someone offers help on a carpool request.
+- A match is marked.
+
+The browser does not send email directly. It calls the Edge Function, the function verifies the signed-in user, looks up the relevant participants, and then sends mail through Resend.
+
+That split matters. A browser app should not contain a private email-provider API key. The key belongs on the server side as a Supabase function secret.
 
 ## React Components: The App As Reusable Pieces
 
@@ -571,7 +605,6 @@ The main components are:
 
 - `App`
 - `EntryForm`
-- `RouteMap`
 - `RideCard`
 - `ParticipantSummary`
 - `ScorePill`
@@ -588,7 +621,7 @@ For example, `RideCard` receives:
 - The participant list so it can look up names.
 - The selected participant so it can calculate actions.
 - The match score.
-- Functions for inquiry, commit, and status changes.
+- Functions for inquiry, offer-help, match, notification, and status changes.
 
 This is called passing props.
 
@@ -606,6 +639,7 @@ This app uses state for:
 - The corridor filter.
 - The status filter.
 - The search query.
+- Notification/action feedback.
 
 When any of those change, React updates the screen.
 
@@ -645,20 +679,18 @@ There is no giant hero section. There is no decorative pitch copy. The first scr
 
 The first version put almost everything on one dashboard. It worked, but it felt busy. That was useful feedback: the app was doing the right things, but it was asking users to absorb too much at once.
 
-The current version is organized into four tabs:
+The fuller branch explored a tabbed dashboard. The simple branch deliberately steps back from that and uses two main areas:
 
-- `Find rides`: browse and filter open ride options.
-- `Add info`: enter or update your own ride profile.
-- `Route map`: see the regional corridor model.
-- `Status`: focus on capacity and commitments.
+- `Your plan`: enter or update the one ride profile tied to the user.
+- `Likely matches`: browse the best open carpool offers, carpool requests, and Uber/Lyft split groups.
 
-That tab structure lowers the mental load. It is the difference between having every paper spread across a desk and putting them into labeled folders.
+That structure lowers the mental load. It is the difference between making someone walk through four rooms and giving them one clean desk with an inbox and an outbox.
 
-Inside the main ride-finding view, the layout still has three conceptual zones:
+Inside the main view, the layout has three conceptual zones:
 
-- Main area: open rides and shared ride pools.
-- Controls: search, corridor, and status filters.
-- Side panel: selected participant view, best fits, and prototype/admin tools.
+- Form area: the user's current ride plan.
+- Match area: likely rides and requests.
+- Compact controls: search, corridor, and availability filtering.
 
 This matches the user's workflow:
 
@@ -666,7 +698,7 @@ This matches the user's workflow:
 2. Add or review ride information.
 3. Browse available ride groups.
 4. Evaluate matches from the correct person's point of view.
-5. Mark inquiry or commitment status.
+5. Inquire, offer help, contact the other person directly, then mark a match after agreement.
 
 The app uses cards for individual rides, which makes sense because each ride is a repeated item with its own status, people, capacity, and actions.
 
@@ -680,14 +712,12 @@ Some important choices:
 
 - CSS variables define colors and reusable values.
 - The top bar stays sticky so the app identity and stats remain visible.
-- The workspace uses CSS grid for the three-column desktop layout.
+- The workspace uses CSS grid for a responsive two-column desktop layout.
 - Media queries collapse the layout on smaller screens.
 - Buttons, inputs, and cards have stable sizes so the layout does not jump around.
-- Status colors help users quickly read whether a ride is open, pending, committed, or full.
+- Status colors help users quickly read whether a ride is open, pending, matched, or full.
 
-The simple route map is built with regular HTML and CSS. It is not a real map library. The corridor nodes are absolutely positioned with percentage coordinates.
-
-That was the right choice for the prototype. A real map would add complexity before we know exactly what routing behavior is needed.
+The separate route map is not part of the simplified first screen. The corridor model is still in the matching logic, but the user sees it through fit labels and match ordering rather than a separate map panel.
 
 ## Icons
 
@@ -718,7 +748,7 @@ The hard part of this project is not creating a table in a database. The hard pa
 
 - How should rides be grouped?
 - What does "full" mean?
-- How do inquiries differ from commitments?
+- How do inquiries differ from final matches?
 - How should route fit be communicated?
 - How do carpool seats differ from Uber/Lyft split capacity?
 
@@ -726,7 +756,7 @@ Building the front-end prototype first let us answer those questions quickly.
 
 Good engineering often means delaying expensive decisions until the shape of the problem is clearer.
 
-Then, once the workflow had a shape, we added Supabase.
+Then, once the workflow had a shape, we added Supabase. Later, after the team knew which user actions should alert another person, we added the notification Edge Function.
 
 That sequence matters. The backend now supports a model we understand instead of forcing the product to fit a schema we guessed too early.
 
@@ -759,7 +789,7 @@ Why this was good:
 
 - The UI can be tested immediately.
 - The matching logic has real-looking cases to rank.
-- The visual states are visible: open, pending, committed, full.
+- The visual states are visible: open, pending, matched, full.
 - It makes the app easier to understand without needing a backend.
 
 Lesson: good sample data is not filler. It is a development tool.
@@ -925,6 +955,8 @@ Inquire
 Commit
 ```
 
+The simple branch later changed the user-facing final action again to "Mark matched," because that better reflects the new rule that people should talk first and only record the match afterward.
+
 The meaning stayed clear, and the layout became cleaner.
 
 Lesson: interface copy is part of engineering. A technically correct label that does not fit is still a bug.
@@ -1025,7 +1057,7 @@ But the answer was not to blindly revoke everything. The app needs narrow RPCs f
 
 - Getting the current user's role.
 - Requesting to join a ride.
-- Committing to a ride.
+- Marking an agreed match.
 
 The fix was to move general helper functions out of the exposed public surface, revoke unneeded execution grants, and leave only the intentional app RPCs callable by authenticated users.
 
@@ -1039,10 +1071,45 @@ That meant a user could update their profile and accidentally create another hos
 
 The fix had two parts:
 
-- Database constraint: one host can have at most one carpool group and one rideshare group.
+- Database constraint: one host can have at most one carpool offer group, one carpool request group, and one rideshare group.
 - Client behavior: save uses an upsert for hosted groups instead of a blind insert.
 
 Lesson: prevent duplicates at the database layer, not only in the UI. The UI is a helpful front door, but the database is the foundation.
+
+## Issue 11: "Open To Either" Needed More Precision
+
+At one point, the form had one broad option:
+
+```text
+I am open to either carpool or Uber/Lyft
+```
+
+That sounded simple, but it hid an important difference. Someone may be open to driving and offering carpool seats, or they may be open to seeking a seat. Those are opposite roles.
+
+The fix was to split the option into two clearer plans:
+
+```text
+I am open to either offering carpool seat or splitting Uber/Lyft
+I am open to either seeking carpool seat or splitting Uber/Lyft
+```
+
+Lesson: fewer choices are not always simpler. A vague choice can push complexity into the user's head. Better choices make the real-world role obvious.
+
+## Issue 12: Matching Should Require A Conversation First
+
+Stakeholders pointed out that attendees should talk by email or phone before anyone records a final match.
+
+That changed the workflow. The app now treats inquiry as the first step and match as the recorded outcome after mutual agreement.
+
+The fix included frontend and database logic:
+
+- Inquire or offer help first.
+- Disable match actions until the inquiry exists.
+- Let carpool drivers finalize their own carpool matches.
+- Let Uber/Lyft organizers or inquirers mark a match after contact.
+- Send email alerts from the Supabase Edge Function when inquiries/offers and matches happen.
+
+Lesson: the right button is not always the fastest button. Sometimes good product design slows one action down so the real-world agreement is cleaner.
 
 ## What Good Engineers Did Here
 
@@ -1133,9 +1200,9 @@ How to avoid trouble:
 
 ## Pitfall: Contact Info Is Sensitive
 
-The prototype displays email and phone links directly.
+The simple branch displays email and phone links directly so attendees can coordinate before marking a match.
 
-That is fine for a controlled demo. It may not be fine for a public app.
+That may be right for a controlled attendee group. It may not be right for a fully public app.
 
 How to avoid trouble:
 
@@ -1147,7 +1214,7 @@ How to avoid trouble:
 
 ## Pitfall: Status Can Drift From Reality
 
-Someone might mark a ride committed, then change plans. A driver might forget to update capacity.
+Someone might mark a ride matched, then change plans. A driver might forget to update capacity.
 
 How to avoid trouble:
 
@@ -1223,11 +1290,39 @@ In this app it handles:
 - Row-level security.
 - Database migrations.
 - RPC functions for ride actions.
+- Edge Functions for notification emails.
 - MFA-aware admin access.
 
 Supabase is helpful here because the app needs a real shared board, not just a single-user browser notebook.
 
 The important lesson is that Supabase is not just "where the data lives." It is also where security rules live. The database is responsible for enforcing who can see and change what.
+
+## Deno And Supabase Edge Functions
+
+Supabase Edge Functions run on Deno, not Node.
+
+That is why the project now has:
+
+```text
+deno.lock
+supabase/functions/send-ride-notification/index.ts
+```
+
+The practical lesson is simple: frontend code runs in the user's browser, but notification code runs in Supabase. That lets the app keep private secrets, such as the email-provider API key, out of the browser.
+
+## Resend
+
+Resend is the email delivery service used by the notification Edge Function.
+
+The function needs these Supabase secrets before emails can actually go out:
+
+```text
+RESEND_API_KEY
+NOTIFICATION_FROM_EMAIL
+APP_PUBLIC_URL
+```
+
+The first two are required. `APP_PUBLIC_URL` is optional but useful because it lets emails point people back to the app.
 
 ## ESLint
 
@@ -1290,9 +1385,15 @@ src/supabaseData.js
   fetches the board
   saves participants and ride groups
   calls ride action RPCs
+  calls the notification Edge Function
 
 supabase/migrations/
   defines tables, policies, functions, and constraints
+
+supabase/functions/send-ride-notification/
+  verifies the actor
+  looks up the ride and recipient
+  sends email through Resend
 
 src/styles.css
   controls layout, colors, spacing, responsive behavior
@@ -1312,12 +1413,26 @@ attendee fills form
   -> React updates form state
   -> user submits
   -> app creates participant
-  -> app may create ride group
+  -> app may create carpool offer, carpool request, or rideshare group
   -> signed-out mode saves to localStorage
   -> signed-in mode saves to Supabase
   -> ride board re-renders
   -> match scores update
   -> stats update
+```
+
+And here is the inquiry and notification flow:
+
+```text
+attendee clicks Inquire or Offer help
+  -> app records a ride inquiry
+  -> app calls send-ride-notification
+  -> Edge Function verifies the signed-in user
+  -> Edge Function emails the host or requester
+  -> people talk directly
+  -> allowed user marks the match
+  -> app records the membership/match
+  -> Edge Function emails the other person
 ```
 
 ## What Would Come Next
@@ -1326,7 +1441,7 @@ This app is now a working React/Supabase foundation, but it is not the final pro
 
 Good next steps:
 
-1. Add host approval for commitments.
+1. Deploy the `send-ride-notification` Edge Function and configure Resend secrets in the hosted Supabase project.
 2. Add timestamps and update reminders.
 3. Add organizer exports.
 4. Add optional pickup coordinates or meeting points.
@@ -1431,6 +1546,9 @@ participants
   corridor
   intent
   transport_preference
+  seats_available
+  seats_needed
+  max_party_size
   notes
   created_at
   updated_at
@@ -1467,7 +1585,7 @@ The database also includes triggers and helper functions:
 
 - To keep `participant_directory` synced.
 - To calculate open spots.
-- To request or commit riders through controlled RPCs.
+- To request rides and mark agreed matches through controlled RPCs.
 - To enforce admin access only after MFA.
 
 ## The Most Important Product Lesson
@@ -1551,6 +1669,19 @@ supabase db push
 supabase migration list
 ```
 
+The notification function can be checked locally with:
+
+```bash
+deno check supabase/functions/send-ride-notification/index.ts
+```
+
+For hosted email alerts, deploy the function and set secrets:
+
+```bash
+supabase functions deploy send-ride-notification
+supabase secrets set RESEND_API_KEY=... NOTIFICATION_FROM_EMAIL='IRE Ride Connection <rides@example.org>' APP_PUBLIC_URL='https://your-app-url.example'
+```
+
 ## How To Check The App
 
 Useful commands:
@@ -1558,6 +1689,7 @@ Useful commands:
 ```bash
 npm run lint
 npm run build
+deno check supabase/functions/send-ride-notification/index.ts
 supabase db advisors --linked --type security --level info
 ```
 
@@ -1573,7 +1705,7 @@ For visual checks, open the app in a browser and inspect:
 - Match ranking.
 - Ride cards.
 - Capacity meters.
-- Inquiry and commit actions.
+- Inquiry, offer-help, and match actions.
 - Status filtering.
 - Signed-out sample mode.
 - Signed-in Supabase mode, when credentials are available.
@@ -1584,13 +1716,13 @@ Do not skip visual inspection. Front-end bugs often live in the space between "t
 
 `participant`: A person using the app.
 
-`ride group`: A carpool or Uber/Lyft split opportunity.
+`ride group`: A carpool offer, carpool request, or Uber/Lyft split opportunity.
 
 `host`: The person who created or anchors a ride group.
 
-`riderIds`: Participants who have committed to a group.
+`riderIds`: Participants who have been matched into a group. In the database this is still stored through `ride_memberships`.
 
-`inquiries`: Participants who have asked about joining but are not committed yet.
+`inquiries`: Participants who have asked about joining or offered help but are not matched yet.
 
 `corridor`: A regional route bucket, such as DC Northwest or Arlington/Alexandria.
 
@@ -1604,6 +1736,10 @@ Do not skip visual inspection. Front-end bugs often live in the space between "t
 
 `Supabase`: The hosted backend for auth, database storage, migrations, row-level security, and RPCs.
 
+`Edge Function`: Server-side Supabase code used here to send notification emails without exposing private email-provider secrets to the browser.
+
+`Resend`: The email delivery provider used by the notification Edge Function.
+
 `one-time code`: A short-lived email code that signs a user in without a password.
 
 `RLS`: Row-level security. Database rules that decide which rows a user can read or change.
@@ -1616,7 +1752,7 @@ Do not skip visual inspection. Front-end bugs often live in the space between "t
 
 This app is a practical first version of a real coordination tool, now backed by Supabase for shared signed-in use.
 
-It turns a spreadsheet into something more useful by understanding the shape of the problem: people, routes, time slots, seats, capacity, inquiries, and commitments.
+It turns a spreadsheet into something more useful by understanding the shape of the problem: people, routes, time slots, seats, capacity, inquiries, and matches.
 
 The current version is intentionally modest. It does not try to solve everything. It solves the core matching, status, auth, and shared-data problem clearly enough that the next technical decisions can be made with better information.
 
