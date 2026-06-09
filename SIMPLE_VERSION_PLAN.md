@@ -22,6 +22,7 @@ The route map, separate status dashboard, and full match sidebar are removed fro
 ## Simplification Choices
 
 - Show only the numeric fields that apply to the selected ride plan.
+- Collapse sign-in and saved ride-plan details until the user needs to interact with them.
 - Replace the old disabled-field explanation with one plain sentence under the ride-plan menu.
 - Keep search and corridor filtering, but reduce status filtering to "Available posts" or "All posts."
 - Make cards focus on connection essentials: ride type, corridor, neighborhood, trip slots, capacity/need, contact links, and one or two actions.
@@ -30,11 +31,13 @@ The route map, separate status dashboard, and full match sidebar are removed fro
 - Let carpool drivers finalize carpool matches. For Uber/Lyft split groups, let either the organizer or the contacted participant mark the match once contact has been recorded.
 - Do not send app-generated email notifications. The simple branch relies on visible email/phone links and honest contact-tracking language instead of a transactional email provider.
 - Keep `Matched` out of the ordinary status dropdown for unmatched posts; users should reach that state through `Mark matched`.
+- Hide post status controls from people who do not own the post unless they are admins.
 
 ## No-Email Design Direction
 
 - Treat `Reveal email` and `Reveal phone` as the primary contact actions on every card.
 - Use secondary buttons only for record keeping: `Record contact`, `Record help offer`, and `Mark matched`.
+- Require at least one contact method to be revealed before showing `Record contact` or `Record help offer`.
 - Avoid labels such as `Inquire` or `Send request` because they imply the app notified the other person.
 - Do not use disabled buttons for instructions such as `Contact first`; show that guidance as plain helper text instead.
 - Show activity labels as contact history, such as `Contacted by` or `Help offered by`, rather than as an app-managed inbox.

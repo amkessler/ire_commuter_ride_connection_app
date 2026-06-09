@@ -870,6 +870,7 @@ button:focus-visible {
 }
 
 .contact-row {
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -1122,6 +1123,19 @@ button:focus-visible {
   box-shadow: none;
 }
 
+.simple-app .auth-panel.collapsed {
+  align-items: center;
+}
+
+.simple-app .auth-panel.collapsed > div:first-child {
+  min-width: 0;
+}
+
+.simple-app .auth-panel.collapsed .secondary-button {
+  margin-left: auto;
+  min-width: 120px;
+}
+
 .simple-shell {
   display: grid;
   grid-template-columns: minmax(340px, 430px) minmax(0, 1fr);
@@ -1141,6 +1155,52 @@ button:focus-visible {
 .simple-profile {
   align-self: start;
   padding: 18px;
+}
+
+.plan-summary {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.plan-summary strong {
+  display: block;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.plan-summary span,
+.plan-summary p {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.plan-summary p {
+  margin: 0;
+}
+
+.summary-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.summary-chip-row span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #eef3ee;
+  color: #263644;
+  font-weight: 900;
+}
+
+.plan-summary-note {
+  padding: 10px;
+  border-radius: 8px;
+  background: #f7f4ea;
 }
 
 .simple-board {
@@ -1354,6 +1414,10 @@ button:focus-visible {
 .simple-app .card-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 120px;
+}
+
+.simple-app .card-actions.no-status-control {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
 }
 
 .simple-app .card-actions button,

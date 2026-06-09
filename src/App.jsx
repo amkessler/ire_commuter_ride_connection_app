@@ -659,6 +659,7 @@ function App() {
   const [rideInfoMessage, setRideInfoMessage] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasAdminMfaAccess, setHasAdminMfaAccess] = useState(false);
+  const [isPlanEditorOpen, setIsPlanEditorOpen] = useState(false);
   const boardRequestId = useRef(0);
 
   const { participants, groups } = state;
@@ -957,6 +958,7 @@ function App() {
         setForm(participantToForm(savedParticipant));
         await loadRemoteBoard(session);
         setRideInfoMessage("Ride info saved.");
+        setIsPlanEditorOpen(false);
       } catch (error) {
         setAppError(error.message || "Unable to save your ride info.");
       } finally {
@@ -972,6 +974,7 @@ function App() {
     setSelectedParticipantId(participantId);
     setForm(blankForm);
     setRideInfoMessage("Ride info added to the sample board.");
+    setIsPlanEditorOpen(false);
   }
 
   async function updateGroup(groupId, patch) {
@@ -1135,6 +1138,18 @@ function App() {
   }, [groups, participants]);
 
   const canSwitchParticipant = !session || hasAdminAccess;
+  const planSummaryParticipant = ownParticipant || (!session ? selectedParticipant : null);
+  const showPlanEditor = isPlanEditorOpen || !planSummaryParticipant;
+
+  function openPlanEditor() {
+    setRideInfoMessage("");
+    if (ownParticipant) {
+      setForm(participantToForm(ownParticipant));
+    } else {
+      setForm(blankForm);
+    }
+    setIsPlanEditorOpen(true);
+  }
 
   return (
     <div className="app simple-app">
@@ -1177,18 +1192,34 @@ function App() {
             <span className="step-badge">1</span>
             <div>
               <p className="eyebrow">Your plan</p>
-              <h2>{ownParticipant ? "Update your ride info" : "Add your ride info"}</h2>
+              <h2>
+                {showPlanEditor
+                  ? ownParticipant
+                    ? "Update your ride info"
+                    : "Add your ride info"
+                  : session
+                    ? "Your saved ride info"
+                    : "Previewed ride plan"}
+              </h2>
             </div>
           </div>
-          <EntryForm
-            form={form}
-            onSubmit={handleSubmit}
-            onFieldChange={updateFormField}
-            onAvailabilityChange={updateAvailability}
-            isSaving={isSyncing}
-            saveMessage={rideInfoMessage}
-            submitLabel={ownParticipant ? "Save ride info" : "Post ride info"}
-          />
+          {showPlanEditor ? (
+            <EntryForm
+              form={form}
+              onSubmit={handleSubmit}
+              onFieldChange={updateFormField}
+              onAvailabilityChange={updateAvailability}
+              isSaving={isSyncing}
+              saveMessage={rideInfoMessage}
+              submitLabel={ownParticipant ? "Save ride info" : "Post ride info"}
+            />
+          ) : (
+            <PlanSummary
+              participant={planSummaryParticipant}
+              onEdit={openPlanEditor}
+              editLabel={session ? "Edit ride info" : "Add a sample profile"}
+            />
+          )}
           <PrototypeTools isSignedIn={Boolean(session)} resetSamples={resetSamples} />
         </section>
 
@@ -1262,7 +1293,10 @@ function App() {
                   onInquire={inquire}
                   onCommit={commit}
                   onStatusChange={(status) => updateGroup(group.id, { status })}
-                  canManageStatus={!session || hasAdminAccess || group.hostId === ownParticipant?.id}
+                  canManageStatus={
+                    hasAdminAccess ||
+                    group.hostId === (session ? ownParticipant?.id : selectedParticipant?.id)
+                  }
                 />
               ))
             ) : (
@@ -1292,6 +1326,8 @@ function AuthPanel({
   setAuthEmail,
   userRole,
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   if (!hasSupabaseConfig) {
     return (
       <section className="auth-panel">
@@ -1329,40 +1365,53 @@ function AuthPanel({
   }
 
   return (
-    <section className="auth-panel">
+    <section className={`auth-panel${isExpanded ? " expanded" : " collapsed"}`}>
       <div>
         <strong>Sign in to save your ride profile</strong>
-        <span>Use your email to get a one-time sign-in code. The sample board remains visible while signed out.</span>
+        <span>
+          {isExpanded
+            ? "Use your email to get a one-time sign-in code. The sample board remains visible while signed out."
+            : "Optional. The sample board remains visible while signed out."}
+        </span>
       </div>
-      <form className="auth-form" onSubmit={onSendCode}>
-        <label className="field">
-          <span>Account email</span>
-          <input
-            required
-            type="email"
-            value={authEmail}
-            onChange={(event) => setAuthEmail(event.target.value)}
-            placeholder="you@example.com"
-          />
-        </label>
-        <button className="primary-button" type="submit">
-          Send code
+      {!isExpanded && (
+        <button className="secondary-button" type="button" onClick={() => setIsExpanded(true)}>
+          Sign in
         </button>
-      </form>
-      <form className="auth-form" onSubmit={onVerifyCode}>
-        <label className="field">
-          <span>One-time code</span>
-          <input
-            inputMode="numeric"
-            value={authCode}
-            onChange={(event) => setAuthCode(event.target.value)}
-            placeholder="123456"
-          />
-        </label>
-        <button className="secondary-button" disabled={!authCode} type="submit">
-          Verify code
-        </button>
-      </form>
+      )}
+      {isExpanded && (
+        <>
+          <form className="auth-form" onSubmit={onSendCode}>
+            <label className="field">
+              <span>Account email</span>
+              <input
+                required
+                type="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                placeholder="you@example.com"
+              />
+            </label>
+            <button className="primary-button" type="submit">
+              Send code
+            </button>
+          </form>
+          <form className="auth-form" onSubmit={onVerifyCode}>
+            <label className="field">
+              <span>One-time code</span>
+              <input
+                inputMode="numeric"
+                value={authCode}
+                onChange={(event) => setAuthCode(event.target.value)}
+                placeholder="123456"
+              />
+            </label>
+            <button className="secondary-button" disabled={!authCode} type="submit">
+              Verify code
+            </button>
+          </form>
+        </>
+      )}
       {authMessage && <p className="success-text">{authMessage}</p>}
       {appError && <p className="error-text">{appError}</p>}
     </section>
@@ -1625,6 +1674,38 @@ function PrototypeTools({ isSignedIn, resetSamples }) {
   );
 }
 
+function PlanSummary({ editLabel, onEdit, participant }) {
+  if (!participant) return null;
+  const ridePlan = ridePlanFromForm(participant);
+  const ridePlanHelp = getRidePlanHelp(ridePlan);
+
+  return (
+    <div className="plan-summary">
+      <div>
+        <strong>{participant.name}</strong>
+        <span>
+          {participant.neighborhood} · {getCorridor(participant.corridor).label}
+        </span>
+      </div>
+      <p>{ridePlanHelp}</p>
+      <div className="summary-chip-row">
+        <span>{formatSlots(participant.availability)}</span>
+        {participant.seatsAvailable > 0 && (
+          <span>{participant.seatsAvailable} {pluralize(participant.seatsAvailable, "carpool seat")} offered</span>
+        )}
+        {participant.seatsNeeded > 0 && (
+          <span>{participant.seatsNeeded} {pluralize(participant.seatsNeeded, "carpool seat")} needed</span>
+        )}
+        {participant.maxPartySize > 0 && <span>Uber/Lyft group up to {participant.maxPartySize}</span>}
+      </div>
+      {participant.notes && <p className="plan-summary-note">{participant.notes}</p>}
+      <button className="secondary-button" type="button" onClick={onEdit}>
+        {editLabel}
+      </button>
+    </div>
+  );
+}
+
 function EntryForm({
   form,
   isSaving,
@@ -1794,7 +1875,7 @@ function RideCard({
   onCommit,
   onStatusChange,
 }) {
-  const [revealedContact, setRevealedContact] = useState(null);
+  const [revealedContacts, setRevealedContacts] = useState({ email: false, phone: false });
   const host = participants.find((participant) => participant.id === group.hostId);
   const riders = group.riderIds
     .map((id) => participants.find((participant) => participant.id === id))
@@ -1817,6 +1898,9 @@ function RideCard({
     !alreadyInquired &&
     status !== "full" &&
     canParticipantActOnGroup(selectedParticipant, group);
+  const hasContactMethod = Boolean(host?.email || host?.phone);
+  const hasRevealedContact = revealedContacts.email || revealedContacts.phone;
+  const canRecordContact = canInquire && hasRevealedContact;
   const canSelfMarkMatch =
     selectedParticipant &&
     !isHost &&
@@ -1841,6 +1925,8 @@ function RideCard({
     contactStatusText = groupMeta.inquiredLabel;
   } else if (isHost) {
     contactStatusText = "Your post";
+  } else if (canInquire) {
+    contactStatusText = hasContactMethod ? "Reveal first" : "Contact unavailable";
   } else if (status === "committed") {
     contactStatusText = "Already matched";
   } else if (status === "full") {
@@ -1856,10 +1942,14 @@ function RideCard({
     actionGuidance = "Contact noted. The driver can mark the match.";
   } else if (alreadyInquired) {
     actionGuidance = "Contact noted. Mark matched after agreement.";
+  } else if (canInquire && !hasRevealedContact && group.type === "carpool-request") {
+    actionGuidance = "Reveal email or phone to offer help, then note it here.";
+  } else if (canInquire && !hasRevealedContact) {
+    actionGuidance = "Reveal email or phone first, then note that contact happened.";
   } else if (canInquire && group.type === "carpool-request") {
-    actionGuidance = "Reveal Email or Phone to offer help, then note it here.";
+    actionGuidance = "After you offer help, record it here.";
   } else if (canInquire) {
-    actionGuidance = "Reveal Email or Phone first, then note that contact happened.";
+    actionGuidance = "After you email or call, record contact here.";
   } else if (isHost && hostCanMarkInquiries) {
     actionGuidance = "Review contacted people above and mark matched after agreement.";
   } else if (isHost) {
@@ -1914,22 +2004,22 @@ function RideCard({
             <button
               className="contact-reveal-button"
               type="button"
-              onClick={() => setRevealedContact(revealedContact === "email" ? null : "email")}
-              aria-expanded={revealedContact === "email"}
+              onClick={() => setRevealedContacts((current) => ({ ...current, email: !current.email }))}
+              aria-expanded={revealedContacts.email}
             >
               <Mail size={14} aria-hidden="true" />
-              {revealedContact === "email" ? host.email : "Reveal email"}
+              {revealedContacts.email ? host.email : "Reveal email"}
             </button>
           )}
           {host?.phone && (
             <button
               className="contact-reveal-button"
               type="button"
-              onClick={() => setRevealedContact(revealedContact === "phone" ? null : "phone")}
-              aria-expanded={revealedContact === "phone"}
+              onClick={() => setRevealedContacts((current) => ({ ...current, phone: !current.phone }))}
+              aria-expanded={revealedContacts.phone}
             >
               <Phone size={14} aria-hidden="true" />
-              {revealedContact === "phone" ? host.phone : "Reveal phone"}
+              {revealedContacts.phone ? host.phone : "Reveal phone"}
             </button>
           )}
           {!host?.email && !host?.phone && <span className="private-contact">Contact hidden</span>}
@@ -1961,8 +2051,8 @@ function RideCard({
         </div>
       )}
 
-      <div className="card-actions">
-        {canInquire ? (
+      <div className={`card-actions${canManageStatus ? "" : " no-status-control"}`}>
+        {canRecordContact ? (
           <button className="secondary-button" type="button" onClick={() => onInquire(group.id)}>
             <CircleAlert size={15} aria-hidden="true" />
             {groupMeta.inquireLabel}
@@ -1981,21 +2071,22 @@ function RideCard({
         ) : (
           <p className="action-note">{actionGuidance}</p>
         )}
-        <select
-          value={status}
-          onChange={(event) => onStatusChange(event.target.value)}
-          aria-label={groupMeta.statusLabel}
-          disabled={!canManageStatus}
-        >
-          <option value="open">Open</option>
-          <option value="pending">Pending</option>
-          {status === "committed" && (
-            <option value="committed" disabled>
-              Matched
-            </option>
-          )}
-          <option value="full">Full</option>
-        </select>
+        {canManageStatus && (
+          <select
+            value={status}
+            onChange={(event) => onStatusChange(event.target.value)}
+            aria-label={groupMeta.statusLabel}
+          >
+            <option value="open">Open</option>
+            <option value="pending">Pending</option>
+            {status === "committed" && (
+              <option value="committed" disabled>
+                Matched
+              </option>
+            )}
+            <option value="full">Full</option>
+          </select>
+        )}
       </div>
     </article>
   );
