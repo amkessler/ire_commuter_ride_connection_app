@@ -580,24 +580,46 @@ function effectiveStatus(group) {
   return group.status;
 }
 
+function getParticipantRideCapabilities(participant) {
+  if (!participant) {
+    return {
+      wantsCarpoolSeat: false,
+      wantsRideshare: false,
+      offersCarpool: false,
+    };
+  }
+
+  return {
+    wantsCarpoolSeat:
+      participant.intent === "need-seat" ||
+      (participant.intent === "both" && participant.seatsNeeded > 0) ||
+      ((participant.transportPreference === "carpool" || participant.transportPreference === "either") &&
+        participant.seatsNeeded > 0),
+    wantsRideshare:
+      participant.intent === "split-rideshare" ||
+      participant.intent === "both" ||
+      participant.transportPreference === "rideshare" ||
+      participant.transportPreference === "either",
+    offersCarpool:
+      (participant.intent === "offer" || participant.intent === "both") &&
+      participant.transportPreference !== "rideshare" &&
+      participant.seatsAvailable > 0,
+  };
+}
+
+function canParticipantActOnGroup(participant, group) {
+  const capabilities = getParticipantRideCapabilities(participant);
+  if (group.type === "carpool") return capabilities.wantsCarpoolSeat;
+  if (group.type === "carpool-request") return capabilities.offersCarpool;
+  return capabilities.wantsRideshare;
+}
+
 function scoreGroupForParticipant(group, participant) {
   const sharedSlots = overlapSlots(group.availability, participant.availability);
   const routeFit = routeFitLabel(participant.corridor, group.corridor, group.type);
   const status = effectiveStatus(group);
-  const wantsCarpoolSeat =
-    participant.intent === "need-seat" ||
-    (participant.intent === "both" && participant.seatsNeeded > 0) ||
-    ((participant.transportPreference === "carpool" || participant.transportPreference === "either") &&
-      participant.seatsNeeded > 0);
-  const wantsRideshare =
-    participant.intent === "split-rideshare" ||
-    participant.intent === "both" ||
-    participant.transportPreference === "rideshare" ||
-    participant.transportPreference === "either";
-  const offersCarpool =
-    (participant.intent === "offer" || participant.intent === "both") &&
-    participant.transportPreference !== "rideshare" &&
-    participant.seatsAvailable > 0;
+  const { wantsCarpoolSeat, wantsRideshare, offersCarpool } = getParticipantRideCapabilities(participant);
+  const compatibleGroup = canParticipantActOnGroup(participant, group);
 
   let score = sharedSlots.length * 12;
   if (routeFit.level === "strong") score += 38;
@@ -615,6 +637,7 @@ function scoreGroupForParticipant(group, participant) {
   if (status === "pending") score += 4;
   if (status === "committed") score += 2;
   if (status === "full") score -= 34;
+  if (!compatibleGroup) score -= 60;
   if (group.routeFlexibility === "tight" && routeFit.level !== "strong") score -= 18;
   if (group.routeFlexibility === "flexible" && routeFit.level !== "weak") score += 5;
 
@@ -1074,7 +1097,7 @@ function App() {
   const selectedMatches = useMemo(() => {
     if (!selectedParticipant) return [];
     return groups
-      .filter((group) => group.hostId !== selectedParticipant.id)
+      .filter((group) => group.hostId !== selectedParticipant.id && canParticipantActOnGroup(selectedParticipant, group))
       .map((group) => ({
         group,
         match: scoreGroupForParticipant(group, selectedParticipant),
@@ -1946,7 +1969,12 @@ function RideCard({
   const alreadyRiding = selectedParticipant && group.riderIds.includes(selectedParticipant.id);
   const alreadyInquired = selectedParticipant && group.inquiries.includes(selectedParticipant.id);
   const isHost = selectedParticipant && selectedParticipant.id === group.hostId;
-  const canAct = selectedParticipant && !isHost && !alreadyRiding && status !== "full";
+  const canAct =
+    selectedParticipant &&
+    !isHost &&
+    !alreadyRiding &&
+    status !== "full" &&
+    canParticipantActOnGroup(selectedParticipant, group);
 
   return (
     <article className={`ride-card status-${status}`}>
