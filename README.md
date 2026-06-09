@@ -74,3 +74,31 @@ If npm is configured for a private registry on your machine, install with a one-
 ```bash
 npm_config_registry=https://registry.npmjs.org/ npm install
 ```
+
+## Supabase
+
+This app is linked to the Supabase project `ire_commuter_rides`.
+
+Local browser config belongs in `.env.local`:
+
+```bash
+VITE_SUPABASE_URL=https://jihvnicnexakeyyxeyad.supabase.co
+VITE_SUPABASE_ANON_KEY=your-public-anon-or-publishable-key
+```
+
+Apply database changes:
+
+```bash
+supabase db push
+```
+
+Regular users sign in by email one-time code or magic link. In the Supabase dashboard, configure the email template to include a one-time token if you want the in-app code entry flow to be primary.
+
+Admins are controlled by `public.admin_users`. Add an admin by inserting that user's auth UUID:
+
+```sql
+insert into public.admin_users (user_id)
+values ('00000000-0000-0000-0000-000000000000');
+```
+
+Admin users see the participant switcher and MFA setup panel. Regular signed-in users see only their own ride profile as the matching perspective.

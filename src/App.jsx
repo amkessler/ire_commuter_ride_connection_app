@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarClock,
   Car,
@@ -15,6 +15,14 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
+import { hasSupabaseConfig, supabase } from "./supabaseClient";
+import {
+  commitToRide,
+  fetchSupabaseBoard,
+  requestJoinRide,
+  saveGroupStatus,
+  saveParticipantWithGroups,
+} from "./supabaseData";
 
 const storageKey = "ire-ride-connection-state-v1";
 
@@ -444,11 +452,133 @@ function App() {
   const [statusFilter, setStatusFilter] = useState("active");
   const [query, setQuery] = useState("");
   const [activeView, setActiveView] = useState("rides");
+  const [session, setSession] = useState(null);
+  const [userRole, setUserRole] = useState("user");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authCode, setAuthCode] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+  const [appError, setAppError] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const { participants, groups } = state;
+  const ownParticipant = session
+    ? participants.find((participant) => participant.userId === session.user.id)
+    : null;
   const selectedParticipant =
-    participants.find((participant) => participant.id === selectedParticipantId) ||
+    (session && userRole !== "admin"
+      ? ownParticipant
+      : participants.find((participant) => participant.id === selectedParticipantId)) ||
+    ownParticipant ||
     participants[0];
+
+  const loadRemoteBoard = useCallback(
+    async (activeSession = session) => {
+      if (!activeSession || !supabase) return;
+      setIsSyncing(true);
+      setAppError("");
+      try {
+        const board = await fetchSupabaseBoard();
+        setState({
+          participants: board.participants,
+          groups: board.groups,
+        });
+        setUserRole(board.role);
+
+        const currentOwnParticipant = board.participants.find(
+          (participant) => participant.userId === activeSession.user.id,
+        );
+        if (board.role !== "admin" && currentOwnParticipant) {
+          setSelectedParticipantId(currentOwnParticipant.id);
+        } else if (board.participants.length) {
+          setSelectedParticipantId((currentId) =>
+            board.participants.some((participant) => participant.id === currentId)
+              ? currentId
+              : board.participants[0].id,
+          );
+        }
+      } catch (error) {
+        setAppError(error.message || "Unable to load Supabase data.");
+      } finally {
+        setIsSyncing(false);
+      }
+    },
+    [session],
+  );
+
+  useEffect(() => {
+    if (!supabase) return undefined;
+
+    let isMounted = true;
+
+    async function hydrateAuth() {
+      const { data } = await supabase.auth.getSession();
+      if (!isMounted) return;
+      setSession(data.session);
+      if (data.session) {
+        await loadRemoteBoard(data.session);
+      }
+    }
+
+    hydrateAuth();
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      if (nextSession) {
+        loadRemoteBoard(nextSession);
+      } else {
+        setUserRole("user");
+        setState(loadInitialState());
+        setSelectedParticipantId("p2");
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [loadRemoteBoard]);
+
+  async function sendLoginCode(event) {
+    event.preventDefault();
+    if (!supabase) return;
+    setAppError("");
+    setAuthMessage("");
+    const { error } = await supabase.auth.signInWithOtp({
+      email: authEmail,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: window.location.origin,
+      },
+    });
+    if (error) {
+      setAppError(error.message);
+      return;
+    }
+    setAuthMessage("Check your email for a one-time code or sign-in link.");
+  }
+
+  async function verifyLoginCode(event) {
+    event.preventDefault();
+    if (!supabase) return;
+    setAppError("");
+    const { error } = await supabase.auth.verifyOtp({
+      email: authEmail,
+      token: authCode,
+      type: "email",
+    });
+    if (error) {
+      setAppError(error.message);
+      return;
+    }
+    setAuthCode("");
+    setAuthMessage("Signed in.");
+  }
+
+  async function signOut() {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    setAuthMessage("");
+  }
 
   function persist(nextState) {
     setState(nextState);
@@ -456,6 +586,11 @@ function App() {
   }
 
   function resetSamples() {
+    if (session) {
+      loadRemoteBoard();
+      return;
+    }
+
     const nextState = {
       participants: sampleParticipants,
       groups: sampleGroups,
@@ -481,7 +616,7 @@ function App() {
     }));
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
 
     const participantId = `p${Date.now()}`;
@@ -493,6 +628,7 @@ function App() {
     };
 
     const nextGroups = [...groups];
+    const groupsToCreate = [];
     const offersCarpool =
       (participant.intent === "offer" || participant.intent === "both") &&
       participant.transportPreference !== "rideshare" &&
@@ -502,7 +638,7 @@ function App() {
       (participant.intent === "both" && participant.transportPreference !== "carpool");
 
     if (offersCarpool) {
-      nextGroups.push({
+      const carpoolGroup = {
         id: `g${Date.now()}c`,
         hostId: participantId,
         type: "carpool",
@@ -513,11 +649,13 @@ function App() {
         inquiries: [],
         status: "open",
         availability: participant.availability,
-      });
+      };
+      nextGroups.push(carpoolGroup);
+      groupsToCreate.push(carpoolGroup);
     }
 
     if (startsRideshare) {
-      nextGroups.push({
+      const rideshareGroup = {
         id: `g${Date.now()}r`,
         hostId: participantId,
         type: "rideshare",
@@ -528,7 +666,29 @@ function App() {
         inquiries: [],
         status: "open",
         availability: participant.availability,
-      });
+      };
+      nextGroups.push(rideshareGroup);
+      groupsToCreate.push(rideshareGroup);
+    }
+
+    if (session && supabase) {
+      setIsSyncing(true);
+      setAppError("");
+      try {
+        const savedParticipant = await saveParticipantWithGroups(
+          participant,
+          session.user.id,
+          groupsToCreate,
+        );
+        setSelectedParticipantId(savedParticipant.id);
+        setForm(blankForm);
+        await loadRemoteBoard();
+      } catch (error) {
+        setAppError(error.message || "Unable to save your ride info.");
+      } finally {
+        setIsSyncing(false);
+      }
+      return;
     }
 
     persist({
@@ -539,7 +699,21 @@ function App() {
     setForm(blankForm);
   }
 
-  function updateGroup(groupId, patch) {
+  async function updateGroup(groupId, patch) {
+    if (session && supabase && patch.status) {
+      setIsSyncing(true);
+      setAppError("");
+      try {
+        await saveGroupStatus(groupId, patch.status);
+        await loadRemoteBoard();
+      } catch (error) {
+        setAppError(error.message || "Unable to update ride status.");
+      } finally {
+        setIsSyncing(false);
+      }
+      return;
+    }
+
     persist({
       participants,
       groups: groups.map((group) =>
@@ -553,10 +727,25 @@ function App() {
     });
   }
 
-  function inquire(groupId) {
+  async function inquire(groupId) {
     if (!selectedParticipant) return;
     const group = groups.find((item) => item.id === groupId);
     if (!group || group.hostId === selectedParticipant.id) return;
+
+    if (session && supabase) {
+      setIsSyncing(true);
+      setAppError("");
+      try {
+        await requestJoinRide(groupId, selectedParticipant.id);
+        await loadRemoteBoard();
+      } catch (error) {
+        setAppError(error.message || "Unable to mark inquiry.");
+      } finally {
+        setIsSyncing(false);
+      }
+      return;
+    }
+
     const inquiries = new Set(group.inquiries);
     inquiries.add(selectedParticipant.id);
     updateGroup(groupId, {
@@ -565,10 +754,25 @@ function App() {
     });
   }
 
-  function commit(groupId) {
+  async function commit(groupId) {
     if (!selectedParticipant) return;
     const group = groups.find((item) => item.id === groupId);
     if (!group || group.hostId === selectedParticipant.id) return;
+
+    if (session && supabase) {
+      setIsSyncing(true);
+      setAppError("");
+      try {
+        await commitToRide(groupId, selectedParticipant.id);
+        await loadRemoteBoard();
+      } catch (error) {
+        setAppError(error.message || "Unable to commit rider.");
+      } finally {
+        setIsSyncing(false);
+      }
+      return;
+    }
+
     const riders = new Set(group.riderIds);
     riders.add(selectedParticipant.id);
     const inquiries = group.inquiries.filter((id) => id !== selectedParticipant.id);
@@ -649,6 +853,22 @@ function App() {
         </div>
       </header>
 
+      <AuthPanel
+        appError={appError}
+        authCode={authCode}
+        authEmail={authEmail}
+        authMessage={authMessage}
+        hasSupabaseConfig={hasSupabaseConfig}
+        isSyncing={isSyncing}
+        onSendCode={sendLoginCode}
+        onSignOut={signOut}
+        onVerifyCode={verifyLoginCode}
+        session={session}
+        setAuthCode={setAuthCode}
+        setAuthEmail={setAuthEmail}
+        userRole={userRole}
+      />
+
       <nav className="view-tabs" aria-label="App sections">
         {viewTabs.map((tab) => {
           const TabIcon = tab.Icon;
@@ -696,17 +916,20 @@ function App() {
                   onInquire={inquire}
                   onCommit={commit}
                   onStatusChange={(status) => updateGroup(group.id, { status })}
+                  canManageStatus={!session || userRole === "admin" || group.hostId === ownParticipant?.id}
                 />
               ))}
             </div>
           </section>
 
           <MatchSidebar
+            isSignedIn={Boolean(session)}
             participants={participants}
             resetSamples={resetSamples}
             selectedMatches={selectedMatches}
             selectedParticipant={selectedParticipant}
             setSelectedParticipantId={setSelectedParticipantId}
+            userRole={userRole}
           />
         </main>
       )}
@@ -739,7 +962,7 @@ function App() {
                 <Stat label="Seeking" value={activeStats.seekers} />
               </div>
             </section>
-            <PrototypeTools resetSamples={resetSamples} />
+            <PrototypeTools isSignedIn={Boolean(session)} resetSamples={resetSamples} />
           </aside>
         </main>
       )}
@@ -778,17 +1001,18 @@ function App() {
 
             <div className="ride-grid compact-ride-grid">
               {filteredGroups.map((group) => (
-                <RideCard
-                  key={group.id}
-                  group={group}
-                  participants={participants}
-                  selectedParticipant={selectedParticipant}
-                  match={selectedParticipant ? scoreGroupForParticipant(group, selectedParticipant) : null}
-                  onInquire={inquire}
-                  onCommit={commit}
-                  onStatusChange={(status) => updateGroup(group.id, { status })}
-                />
-              ))}
+                  <RideCard
+                    key={group.id}
+                    group={group}
+                    participants={participants}
+                    selectedParticipant={selectedParticipant}
+                    match={selectedParticipant ? scoreGroupForParticipant(group, selectedParticipant) : null}
+                    onInquire={inquire}
+                    onCommit={commit}
+                    onStatusChange={(status) => updateGroup(group.id, { status })}
+                    canManageStatus={!session || userRole === "admin" || group.hostId === ownParticipant?.id}
+                  />
+                ))}
             </div>
           </section>
 
@@ -803,10 +1027,186 @@ function App() {
                 <Stat label="Open spots" value={activeStats.openSeats} />
               </div>
             </section>
-            <PrototypeTools resetSamples={resetSamples} />
+            <PrototypeTools isSignedIn={Boolean(session)} resetSamples={resetSamples} />
           </aside>
         </main>
       )}
+    </div>
+  );
+}
+
+function AuthPanel({
+  appError,
+  authCode,
+  authEmail,
+  authMessage,
+  hasSupabaseConfig,
+  isSyncing,
+  onSendCode,
+  onSignOut,
+  onVerifyCode,
+  session,
+  setAuthCode,
+  setAuthEmail,
+  userRole,
+}) {
+  if (!hasSupabaseConfig) {
+    return (
+      <section className="auth-panel">
+        <div>
+          <strong>Sample mode</strong>
+          <span>Supabase env vars are not configured, so this browser is using local prototype data.</span>
+        </div>
+      </section>
+    );
+  }
+
+  if (session) {
+    return (
+      <section className="auth-panel signed-in">
+        <div>
+          <strong>{session.user.email}</strong>
+          <span>
+            Signed in with Supabase. Role: <b>{userRole}</b>
+            {isSyncing ? " · syncing..." : ""}
+          </span>
+        </div>
+        {userRole === "admin" && <AdminMfaPanel />}
+        <button className="secondary-button" type="button" onClick={onSignOut}>
+          Sign out
+        </button>
+        {appError && <p className="error-text">{appError}</p>}
+      </section>
+    );
+  }
+
+  return (
+    <section className="auth-panel">
+      <div>
+        <strong>Sign in to save your ride profile</strong>
+        <span>Use your email to get a one-time code. The sample board remains visible while signed out.</span>
+      </div>
+      <form className="auth-form" onSubmit={onSendCode}>
+        <label className="field">
+          <span>Account email</span>
+          <input
+            required
+            type="email"
+            value={authEmail}
+            onChange={(event) => setAuthEmail(event.target.value)}
+            placeholder="you@example.com"
+          />
+        </label>
+        <button className="primary-button" type="submit">
+          Send code
+        </button>
+      </form>
+      <form className="auth-form" onSubmit={onVerifyCode}>
+        <label className="field">
+          <span>One-time code</span>
+          <input
+            inputMode="numeric"
+            value={authCode}
+            onChange={(event) => setAuthCode(event.target.value)}
+            placeholder="123456"
+          />
+        </label>
+        <button className="secondary-button" disabled={!authCode} type="submit">
+          Verify
+        </button>
+      </form>
+      {authMessage && <p className="success-text">{authMessage}</p>}
+      {appError && <p className="error-text">{appError}</p>}
+    </section>
+  );
+}
+
+function AdminMfaPanel() {
+  const [factorId, setFactorId] = useState("");
+  const [challengeId, setChallengeId] = useState("");
+  const [qrCode, setQrCode] = useState("");
+  const [secret, setSecret] = useState("");
+  const [code, setCode] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function startMfaEnrollment() {
+    if (!supabase) return;
+    setError("");
+    setMessage("");
+
+    const { data, error: enrollError } = await supabase.auth.mfa.enroll({
+      factorType: "totp",
+      friendlyName: "IRE Ride Admin",
+    });
+
+    if (enrollError) {
+      setError(enrollError.message);
+      return;
+    }
+
+    const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
+      factorId: data.id,
+    });
+
+    if (challengeError) {
+      setError(challengeError.message);
+      return;
+    }
+
+    setFactorId(data.id);
+    setChallengeId(challenge.id);
+    setQrCode(data.totp.qr_code);
+    setSecret(data.totp.secret);
+    setMessage("Scan the QR code in an authenticator app, then enter the code.");
+  }
+
+  async function verifyMfa(event) {
+    event.preventDefault();
+    if (!supabase || !factorId || !challengeId) return;
+    setError("");
+
+    const { error: verifyError } = await supabase.auth.mfa.verify({
+      factorId,
+      challengeId,
+      code,
+    });
+
+    if (verifyError) {
+      setError(verifyError.message);
+      return;
+    }
+
+    setMessage("Admin MFA is verified for this session.");
+    setQrCode("");
+    setSecret("");
+    setCode("");
+  }
+
+  const qrCodeSrc = qrCode.startsWith("data:")
+    ? qrCode
+    : `data:image/svg+xml;utf8,${encodeURIComponent(qrCode)}`;
+
+  return (
+    <div className="mfa-panel">
+      <button className="secondary-button" type="button" onClick={startMfaEnrollment}>
+        Set up admin MFA
+      </button>
+      {qrCode && (
+        <form className="mfa-enroll" onSubmit={verifyMfa}>
+          <img alt="Authenticator QR code" src={qrCodeSrc} />
+          <p>Secret: {secret}</p>
+          <label className="field">
+            <span>Authenticator code</span>
+            <input value={code} onChange={(event) => setCode(event.target.value)} placeholder="123456" />
+          </label>
+          <button className="primary-button" type="submit">
+            Verify MFA
+          </button>
+        </form>
+      )}
+      {message && <p className="success-text">{message}</p>}
+      {error && <p className="error-text">{error}</p>}
     </div>
   );
 }
@@ -862,33 +1262,48 @@ function BoardControls({
 }
 
 function MatchSidebar({
+  isSignedIn,
   participants,
   resetSamples,
   selectedMatches,
   selectedParticipant,
   setSelectedParticipantId,
+  userRole,
 }) {
+  const canSwitchParticipant = !isSignedIn || userRole === "admin";
+
   return (
     <aside className="side-panel">
       <section className="tool-block">
         <div className="section-heading">
           <Route size={18} aria-hidden="true" />
-          <h2>Match as</h2>
+          <h2>{canSwitchParticipant ? "Match as" : "Your ride profile"}</h2>
         </div>
-        <label className="field">
-          <span>Participant view</span>
-          <select
-            value={selectedParticipant?.id || ""}
-            onChange={(event) => setSelectedParticipantId(event.target.value)}
-          >
-            {participants.map((participant) => (
-              <option key={participant.id} value={participant.id}>
-                {participant.name} - {participant.neighborhood}
-              </option>
-            ))}
-          </select>
-        </label>
-        {selectedParticipant && <ParticipantSummary participant={selectedParticipant} />}
+        {canSwitchParticipant ? (
+          <>
+            <p className="helper-text">Prototype/admin tool for previewing matches from another participant's view.</p>
+            <label className="field">
+              <span>Participant view</span>
+              <select
+                value={selectedParticipant?.id || ""}
+                onChange={(event) => setSelectedParticipantId(event.target.value)}
+              >
+                {participants.map((participant) => (
+                  <option key={participant.id} value={participant.id}>
+                    {participant.name} - {participant.neighborhood}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : (
+          <p className="helper-text">Matches are shown from your signed-in ride profile.</p>
+        )}
+        {selectedParticipant ? (
+          <ParticipantSummary participant={selectedParticipant} />
+        ) : (
+          <p className="empty-note">Add your ride info to see personalized matches.</p>
+        )}
       </section>
 
       <section className="tool-block">
@@ -912,21 +1327,21 @@ function MatchSidebar({
         </div>
       </section>
 
-      <PrototypeTools resetSamples={resetSamples} />
+      <PrototypeTools isSignedIn={isSignedIn} resetSamples={resetSamples} />
     </aside>
   );
 }
 
-function PrototypeTools({ resetSamples }) {
+function PrototypeTools({ isSignedIn, resetSamples }) {
   return (
     <section className="tool-block">
       <div className="section-heading">
         <RotateCcw size={18} aria-hidden="true" />
-        <h2>Prototype data</h2>
+        <h2>{isSignedIn ? "Data sync" : "Prototype data"}</h2>
       </div>
       <button className="secondary-button" type="button" onClick={resetSamples}>
         <RotateCcw size={16} aria-hidden="true" />
-        Reset sample board
+        {isSignedIn ? "Reload Supabase data" : "Reset sample board"}
       </button>
     </section>
   );
@@ -1103,7 +1518,16 @@ function RouteMap({ groups, selectedParticipant }) {
   );
 }
 
-function RideCard({ group, participants, selectedParticipant, match, onInquire, onCommit, onStatusChange }) {
+function RideCard({
+  canManageStatus = true,
+  group,
+  participants,
+  selectedParticipant,
+  match,
+  onInquire,
+  onCommit,
+  onStatusChange,
+}) {
   const host = participants.find((participant) => participant.id === group.hostId);
   const riders = group.riderIds
     .map((id) => participants.find((participant) => participant.id === id))
@@ -1165,16 +1589,19 @@ function RideCard({ group, participants, selectedParticipant, match, onInquire, 
         <strong>{host?.name || "Unknown host"}</strong>
         <span>{host?.notes}</span>
         <div className="contact-row">
-          <a href={`mailto:${host?.email}`}>
-            <Mail size={14} aria-hidden="true" />
-            Email
-          </a>
+          {host?.email && (
+            <a href={`mailto:${host.email}`}>
+              <Mail size={14} aria-hidden="true" />
+              Email
+            </a>
+          )}
           {host?.phone && (
             <a href={`tel:${host.phone}`}>
               <Phone size={14} aria-hidden="true" />
               Phone
             </a>
           )}
+          {!host?.email && !host?.phone && <span className="private-contact">Contact hidden</span>}
         </div>
       </div>
 
@@ -1196,7 +1623,12 @@ function RideCard({ group, participants, selectedParticipant, match, onInquire, 
           <CheckCircle2 size={15} aria-hidden="true" />
           {alreadyRiding ? "Committed" : "Commit"}
         </button>
-        <select value={status} onChange={(event) => onStatusChange(event.target.value)} aria-label="Ride status">
+        <select
+          value={status}
+          onChange={(event) => onStatusChange(event.target.value)}
+          aria-label="Ride status"
+          disabled={!canManageStatus}
+        >
           <option value="open">Open</option>
           <option value="pending">Pending</option>
           <option value="committed">Committed</option>

@@ -121,6 +121,95 @@ a {
   white-space: nowrap;
 }
 
+.auth-panel {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  max-width: 1480px;
+  margin: 14px auto 0;
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.94);
+  box-shadow: var(--shadow);
+}
+
+.auth-panel > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 220px;
+}
+
+.auth-panel strong {
+  font-size: 0.95rem;
+}
+
+.auth-panel span,
+.success-text,
+.error-text,
+.empty-note {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.auth-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.auth-panel.signed-in {
+  align-items: center;
+}
+
+.success-text,
+.error-text,
+.empty-note {
+  margin: 0;
+}
+
+.success-text {
+  color: var(--green);
+  font-weight: 800;
+}
+
+.error-text {
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.mfa-panel {
+  display: grid;
+  gap: 8px;
+  max-width: 280px;
+}
+
+.mfa-enroll {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.mfa-enroll img {
+  width: 130px;
+  height: 130px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.mfa-enroll p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
 .view-tabs {
   display: flex;
   gap: 8px;
@@ -223,6 +312,13 @@ a {
 
 .section-heading h2 {
   font-size: 1rem;
+}
+
+.helper-text {
+  margin: -4px 0 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .entry-form,
@@ -748,6 +844,18 @@ button:focus-visible {
   text-decoration: none;
 }
 
+.private-contact {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: #f5f1ec;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
 .people-line {
   align-items: baseline;
   gap: 6px;
@@ -841,6 +949,16 @@ button:focus-visible {
 @media (max-width: 920px) {
   .topbar {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .auth-panel,
+  .auth-form {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .auth-panel {
     flex-direction: column;
   }
 
