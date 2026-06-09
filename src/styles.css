@@ -121,11 +121,66 @@ a {
   white-space: nowrap;
 }
 
+.view-tabs {
+  display: flex;
+  gap: 8px;
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 14px 18px 0;
+  overflow-x: auto;
+}
+
+.view-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px 8px 0 0;
+  background: rgb(249 250 247 / 0.86);
+  color: #34434f;
+  padding: 9px 14px;
+  font-weight: 900;
+}
+
+.view-tabs button:hover {
+  background: #fff;
+}
+
+.view-tabs button.active,
+.view-tabs button[aria-current="page"] {
+  border-bottom-color: #fff;
+  background: #fff;
+  color: #172636;
+  box-shadow: 0 -8px 22px rgb(24 33 43 / 0.06);
+}
+
 .workspace {
   display: grid;
-  grid-template-columns: minmax(280px, 330px) minmax(0, 1fr) minmax(280px, 330px);
   gap: 18px;
+  max-width: 1480px;
+  margin: 0 auto;
   padding: 18px;
+}
+
+.board-workspace {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 330px);
+}
+
+.add-workspace {
+  grid-template-columns: minmax(320px, 560px) minmax(260px, 360px);
+  align-items: start;
+  justify-content: center;
+}
+
+.routes-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.status-workspace {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 330px);
 }
 
 .side-panel,
@@ -153,6 +208,10 @@ a {
 
 .main-panel {
   padding: 18px;
+}
+
+.form-panel {
+  width: 100%;
 }
 
 .section-heading {
@@ -462,6 +521,10 @@ button:focus-visible {
   gap: 14px;
 }
 
+.compact-ride-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
 .ride-card {
   display: flex;
   flex-direction: column;
@@ -735,6 +798,12 @@ button:focus-visible {
   gap: 8px;
 }
 
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .match-row {
   padding: 10px;
   border: 1px solid var(--line);
@@ -757,14 +826,15 @@ button:focus-visible {
 }
 
 @media (max-width: 1180px) {
-  .workspace {
-    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  .board-workspace,
+  .add-workspace,
+  .status-workspace {
+    grid-template-columns: 1fr;
   }
 
-  .workspace > .side-panel:last-child {
-    grid-column: 1 / -1;
+  .workspace > .side-panel {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   }
 }
 
@@ -782,7 +852,7 @@ button:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .workspace > .side-panel:last-child {
+  .workspace > .side-panel {
     display: flex;
   }
 
@@ -798,10 +868,15 @@ button:focus-visible {
 
 @media (max-width: 560px) {
   .topbar,
+  .view-tabs,
   .workspace,
   .main-panel,
   .tool-block {
     padding: 14px;
+  }
+
+  .view-tabs {
+    padding-bottom: 0;
   }
 
   .workspace {
@@ -810,7 +885,8 @@ button:focus-visible {
 
   .field-grid,
   .slot-grid,
-  .ride-grid {
+  .ride-grid,
+  .summary-grid {
     grid-template-columns: 1fr;
   }
 

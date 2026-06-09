@@ -309,6 +309,13 @@ const blankForm = {
   notes: "",
 };
 
+const viewTabs = [
+  { id: "rides", label: "Find rides", Icon: Search },
+  { id: "add", label: "Add info", Icon: Plus },
+  { id: "routes", label: "Route map", Icon: Route },
+  { id: "status", label: "Status", Icon: CheckCircle2 },
+];
+
 function makeAvailability(activeSlots) {
   return slots.reduce((acc, slot) => {
     acc[slot.id] = activeSlots.includes(slot.id);
@@ -436,6 +443,7 @@ function App() {
   const [corridorFilter, setCorridorFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("active");
   const [query, setQuery] = useState("");
+  const [activeView, setActiveView] = useState("rides");
 
   const { participants, groups } = state;
   const selectedParticipant =
@@ -641,9 +649,71 @@ function App() {
         </div>
       </header>
 
-      <main className="workspace">
-        <aside className="side-panel">
-          <section className="tool-block">
+      <nav className="view-tabs" aria-label="App sections">
+        {viewTabs.map((tab) => {
+          const TabIcon = tab.Icon;
+          return (
+            <button
+              aria-current={activeView === tab.id ? "page" : undefined}
+              className={activeView === tab.id ? "active" : ""}
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveView(tab.id)}
+            >
+              <TabIcon size={16} aria-hidden="true" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {activeView === "rides" && (
+        <main className="workspace board-workspace">
+          <section className="main-panel">
+            <div className="board-header">
+              <div>
+                <p className="eyebrow">Route alignment</p>
+                <h2>Open rides and shared ride pools</h2>
+              </div>
+              <BoardControls
+                corridorFilter={corridorFilter}
+                query={query}
+                setCorridorFilter={setCorridorFilter}
+                setQuery={setQuery}
+                setStatusFilter={setStatusFilter}
+                statusFilter={statusFilter}
+              />
+            </div>
+
+            <div className="ride-grid">
+              {filteredGroups.map((group) => (
+                <RideCard
+                  key={group.id}
+                  group={group}
+                  participants={participants}
+                  selectedParticipant={selectedParticipant}
+                  match={selectedParticipant ? scoreGroupForParticipant(group, selectedParticipant) : null}
+                  onInquire={inquire}
+                  onCommit={commit}
+                  onStatusChange={(status) => updateGroup(group.id, { status })}
+                />
+              ))}
+            </div>
+          </section>
+
+          <MatchSidebar
+            participants={participants}
+            resetSamples={resetSamples}
+            selectedMatches={selectedMatches}
+            selectedParticipant={selectedParticipant}
+            setSelectedParticipantId={setSelectedParticipantId}
+          />
+        </main>
+      )}
+
+      {activeView === "add" && (
+        <main className="workspace add-workspace">
+          <section className="tool-block form-panel">
             <div className="section-heading">
               <UserPlus size={18} aria-hidden="true" />
               <h2>Add your ride info</h2>
@@ -655,128 +725,210 @@ function App() {
               onAvailabilityChange={updateAvailability}
             />
           </section>
-        </aside>
 
-        <section className="main-panel">
-          <div className="board-header">
-            <div>
-              <p className="eyebrow">Route alignment</p>
-              <h2>Open rides and shared ride pools</h2>
+          <aside className="side-panel">
+            <section className="tool-block">
+              <div className="section-heading">
+                <CheckCircle2 size={18} aria-hidden="true" />
+                <h2>Current board</h2>
+              </div>
+              <div className="summary-grid">
+                <Stat label="People" value={activeStats.participants} />
+                <Stat label="Open groups" value={activeStats.openGroups} />
+                <Stat label="Open spots" value={activeStats.openSeats} />
+                <Stat label="Seeking" value={activeStats.seekers} />
+              </div>
+            </section>
+            <PrototypeTools resetSamples={resetSamples} />
+          </aside>
+        </main>
+      )}
+
+      {activeView === "routes" && (
+        <main className="workspace routes-workspace">
+          <section className="main-panel">
+            <div className="board-header">
+              <div>
+                <p className="eyebrow">Regional corridors</p>
+                <h2>Route map</h2>
+              </div>
             </div>
-            <div className="board-controls">
-              <label className="field compact">
-                <span>
-                  <Search size={14} aria-hidden="true" />
-                  Search
-                </span>
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Name, neighborhood, corridor"
-                />
-              </label>
-              <label className="field compact">
-                <span>
-                  <Filter size={14} aria-hidden="true" />
-                  Corridor
-                </span>
-                <select value={corridorFilter} onChange={(event) => setCorridorFilter(event.target.value)}>
-                  <option value="all">All corridors</option>
-                  {corridors.map((corridor) => (
-                    <option key={corridor.id} value={corridor.id}>
-                      {corridor.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field compact">
-                <span>Status</span>
-                <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                  <option value="active">Open or pending</option>
-                  <option value="open">Open</option>
-                  <option value="pending">Pending</option>
-                  <option value="committed">Committed</option>
-                  <option value="full">Full</option>
-                  <option value="all">All statuses</option>
-                </select>
-              </label>
-            </div>
-          </div>
+            <RouteMap groups={groups} selectedParticipant={selectedParticipant} />
+          </section>
+        </main>
+      )}
 
-          <RouteMap groups={groups} selectedParticipant={selectedParticipant} />
-
-          <div className="ride-grid">
-            {filteredGroups.map((group) => (
-              <RideCard
-                key={group.id}
-                group={group}
-                participants={participants}
-                selectedParticipant={selectedParticipant}
-                match={selectedParticipant ? scoreGroupForParticipant(group, selectedParticipant) : null}
-                onInquire={inquire}
-                onCommit={commit}
-                onStatusChange={(status) => updateGroup(group.id, { status })}
+      {activeView === "status" && (
+        <main className="workspace status-workspace">
+          <section className="main-panel">
+            <div className="board-header">
+              <div>
+                <p className="eyebrow">Ride status</p>
+                <h2>Capacity and commitments</h2>
+              </div>
+              <BoardControls
+                corridorFilter={corridorFilter}
+                query={query}
+                setCorridorFilter={setCorridorFilter}
+                setQuery={setQuery}
+                setStatusFilter={setStatusFilter}
+                statusFilter={statusFilter}
               />
-            ))}
-          </div>
-        </section>
-
-        <aside className="side-panel">
-          <section className="tool-block">
-            <div className="section-heading">
-              <Route size={18} aria-hidden="true" />
-              <h2>Match as</h2>
             </div>
-            <label className="field">
-              <span>Participant view</span>
-              <select
-                value={selectedParticipant?.id || ""}
-                onChange={(event) => setSelectedParticipantId(event.target.value)}
-              >
-                {participants.map((participant) => (
-                  <option key={participant.id} value={participant.id}>
-                    {participant.name} - {participant.neighborhood}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {selectedParticipant && <ParticipantSummary participant={selectedParticipant} />}
-          </section>
 
-          <section className="tool-block">
-            <div className="section-heading">
-              <CheckCircle2 size={18} aria-hidden="true" />
-              <h2>Best current fits</h2>
-            </div>
-            <div className="match-list">
-              {selectedMatches.map(({ group, match }) => {
-                const host = participants.find((participant) => participant.id === group.hostId);
-                return (
-                  <article className="match-row" key={group.id}>
-                    <div>
-                      <strong>{host?.name || "Unknown host"}</strong>
-                      <span>{getCorridor(group.corridor).short}</span>
-                    </div>
-                    <ScorePill match={match} />
-                  </article>
-                );
-              })}
+            <div className="ride-grid compact-ride-grid">
+              {filteredGroups.map((group) => (
+                <RideCard
+                  key={group.id}
+                  group={group}
+                  participants={participants}
+                  selectedParticipant={selectedParticipant}
+                  match={selectedParticipant ? scoreGroupForParticipant(group, selectedParticipant) : null}
+                  onInquire={inquire}
+                  onCommit={commit}
+                  onStatusChange={(status) => updateGroup(group.id, { status })}
+                />
+              ))}
             </div>
           </section>
 
-          <section className="tool-block">
-            <div className="section-heading">
-              <RotateCcw size={18} aria-hidden="true" />
-              <h2>Prototype data</h2>
-            </div>
-            <button className="secondary-button" type="button" onClick={resetSamples}>
-              <RotateCcw size={16} aria-hidden="true" />
-              Reset sample board
-            </button>
-          </section>
-        </aside>
-      </main>
+          <aside className="side-panel">
+            <section className="tool-block">
+              <div className="section-heading">
+                <Users size={18} aria-hidden="true" />
+                <h2>Open capacity</h2>
+              </div>
+              <div className="summary-grid">
+                <Stat label="Open groups" value={activeStats.openGroups} />
+                <Stat label="Open spots" value={activeStats.openSeats} />
+              </div>
+            </section>
+            <PrototypeTools resetSamples={resetSamples} />
+          </aside>
+        </main>
+      )}
     </div>
+  );
+}
+
+function BoardControls({
+  corridorFilter,
+  query,
+  setCorridorFilter,
+  setQuery,
+  setStatusFilter,
+  statusFilter,
+}) {
+  return (
+    <div className="board-controls">
+      <label className="field compact">
+        <span>
+          <Search size={14} aria-hidden="true" />
+          Search
+        </span>
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Name, neighborhood, corridor"
+        />
+      </label>
+      <label className="field compact">
+        <span>
+          <Filter size={14} aria-hidden="true" />
+          Corridor
+        </span>
+        <select value={corridorFilter} onChange={(event) => setCorridorFilter(event.target.value)}>
+          <option value="all">All corridors</option>
+          {corridors.map((corridor) => (
+            <option key={corridor.id} value={corridor.id}>
+              {corridor.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field compact">
+        <span>Status</span>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <option value="active">Open or pending</option>
+          <option value="open">Open</option>
+          <option value="pending">Pending</option>
+          <option value="committed">Committed</option>
+          <option value="full">Full</option>
+          <option value="all">All statuses</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function MatchSidebar({
+  participants,
+  resetSamples,
+  selectedMatches,
+  selectedParticipant,
+  setSelectedParticipantId,
+}) {
+  return (
+    <aside className="side-panel">
+      <section className="tool-block">
+        <div className="section-heading">
+          <Route size={18} aria-hidden="true" />
+          <h2>Match as</h2>
+        </div>
+        <label className="field">
+          <span>Participant view</span>
+          <select
+            value={selectedParticipant?.id || ""}
+            onChange={(event) => setSelectedParticipantId(event.target.value)}
+          >
+            {participants.map((participant) => (
+              <option key={participant.id} value={participant.id}>
+                {participant.name} - {participant.neighborhood}
+              </option>
+            ))}
+          </select>
+        </label>
+        {selectedParticipant && <ParticipantSummary participant={selectedParticipant} />}
+      </section>
+
+      <section className="tool-block">
+        <div className="section-heading">
+          <CheckCircle2 size={18} aria-hidden="true" />
+          <h2>Best current fits</h2>
+        </div>
+        <div className="match-list">
+          {selectedMatches.map(({ group, match }) => {
+            const host = participants.find((participant) => participant.id === group.hostId);
+            return (
+              <article className="match-row" key={group.id}>
+                <div>
+                  <strong>{host?.name || "Unknown host"}</strong>
+                  <span>{getCorridor(group.corridor).short}</span>
+                </div>
+                <ScorePill match={match} />
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <PrototypeTools resetSamples={resetSamples} />
+    </aside>
+  );
+}
+
+function PrototypeTools({ resetSamples }) {
+  return (
+    <section className="tool-block">
+      <div className="section-heading">
+        <RotateCcw size={18} aria-hidden="true" />
+        <h2>Prototype data</h2>
+      </div>
+      <button className="secondary-button" type="button" onClick={resetSamples}>
+        <RotateCcw size={16} aria-hidden="true" />
+        Reset sample board
+      </button>
+    </section>
   );
 }
 
