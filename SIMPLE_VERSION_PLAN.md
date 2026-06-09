@@ -26,6 +26,8 @@ The route map, separate status dashboard, and full match sidebar are removed fro
 - Keep search and corridor filtering, but reduce status filtering to "Available posts" or "All posts."
 - Make cards focus on connection essentials: ride type, corridor, neighborhood, trip slots, capacity/need, contact links, and one or two actions.
 - Keep status controls on cards so hosts/admins can still mark posts as open, pending, committed, or full.
+- Require an inquiry before anyone can mark a match, so attendees contact each other first by email or phone and only record a match after mutual agreement.
+- Let carpool drivers finalize carpool matches. For Uber/Lyft split groups, let either the organizer or the inquiring participant mark the match once there has been an inquiry.
 
 ## What This Branch Is For
 

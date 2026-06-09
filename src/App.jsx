@@ -484,14 +484,14 @@ function getGroupTypeMeta(type) {
       Icon: Car,
       title: "Driver carpool",
       contactName: "Driver",
-      committedLabel: "Committed riders:",
+      committedLabel: "Matched riders:",
       emptyCommitted: "No riders committed yet",
       inquiriesLabel: "Inquiries:",
       emptyInquiries: "No open inquiries",
       inquireLabel: "Inquire",
       inquiredLabel: "Inquiry sent",
-      commitLabel: "Commit",
-      committedButtonLabel: "Committed",
+      commitLabel: "Driver confirms",
+      committedButtonLabel: "Matched",
       statusLabel: "Ride status",
     };
   }
@@ -517,14 +517,14 @@ function getGroupTypeMeta(type) {
     Icon: Users,
     title: "Uber/Lyft split",
     contactName: "Organizer",
-    committedLabel: "Committed:",
+    committedLabel: "Matched:",
     emptyCommitted: "No riders committed yet",
     inquiriesLabel: "Inquiries:",
     emptyInquiries: "No open inquiries",
     inquireLabel: "Inquire",
     inquiredLabel: "Inquiry sent",
-    commitLabel: "Commit",
-    committedButtonLabel: "Committed",
+    commitLabel: "Mark matched",
+    committedButtonLabel: "Matched",
     statusLabel: "Ride status",
   };
 }
@@ -1006,6 +1006,7 @@ function App() {
     if (!selectedParticipant) return;
     const group = groups.find((item) => item.id === groupId);
     if (!group || group.hostId === selectedParticipant.id) return;
+    if (!canParticipantActOnGroup(selectedParticipant, group)) return;
 
     if (session && supabase) {
       setIsSyncing(true);
@@ -1029,19 +1030,33 @@ function App() {
     });
   }
 
-  async function commit(groupId) {
+  async function commit(groupId, participantIdToMatch = selectedParticipant?.id) {
     if (!selectedParticipant) return;
     const group = groups.find((item) => item.id === groupId);
-    if (!group || group.hostId === selectedParticipant.id) return;
+    const participantToMatch = participants.find((participant) => participant.id === participantIdToMatch);
+    if (!group || !participantToMatch) return;
+
+    const isHost = group.hostId === selectedParticipant.id;
+    const isSelfMatch = participantIdToMatch === selectedParticipant.id;
+    const hasInquiry = group.inquiries.includes(participantIdToMatch);
+    const actorCanMarkMatch =
+      hasAdminAccess ||
+      (group.type === "carpool" && isHost) ||
+      (group.type === "rideshare" && (isHost || isSelfMatch)) ||
+      (group.type === "carpool-request" &&
+        isSelfMatch &&
+        canParticipantActOnGroup(selectedParticipant, group));
+
+    if (!hasInquiry || !actorCanMarkMatch) return;
 
     if (session && supabase) {
       setIsSyncing(true);
       setAppError("");
       try {
-        await commitToRide(groupId, selectedParticipant.id);
+        await commitToRide(groupId, participantIdToMatch);
         await loadRemoteBoard(session);
       } catch (error) {
-        setAppError(error.message || "Unable to commit rider.");
+        setAppError(error.message || "Unable to mark match.");
       } finally {
         setIsSyncing(false);
       }
@@ -1049,8 +1064,8 @@ function App() {
     }
 
     const riders = new Set(group.riderIds);
-    riders.add(selectedParticipant.id);
-    const inquiries = group.inquiries.filter((id) => id !== selectedParticipant.id);
+    riders.add(participantIdToMatch);
+    const inquiries = group.inquiries.filter((id) => id !== participantIdToMatch);
     const nextGroup = {
       ...group,
       riderIds: Array.from(riders),
@@ -1794,12 +1809,34 @@ function RideCard({
   const alreadyRiding = selectedParticipant && group.riderIds.includes(selectedParticipant.id);
   const alreadyInquired = selectedParticipant && group.inquiries.includes(selectedParticipant.id);
   const isHost = selectedParticipant && selectedParticipant.id === group.hostId;
-  const canAct =
+  const canInquire =
     selectedParticipant &&
     !isHost &&
     !alreadyRiding &&
+    !alreadyInquired &&
     status !== "full" &&
     canParticipantActOnGroup(selectedParticipant, group);
+  const canSelfMarkMatch =
+    selectedParticipant &&
+    !isHost &&
+    alreadyInquired &&
+    !alreadyRiding &&
+    status !== "full" &&
+    (group.type === "rideshare" || group.type === "carpool-request") &&
+    canParticipantActOnGroup(selectedParticipant, group);
+  const hostCanMarkInquiries =
+    isHost &&
+    canManageStatus &&
+    status !== "full" &&
+    group.type !== "carpool-request" &&
+    inquiries.length > 0;
+  const matchButtonText = alreadyRiding
+    ? groupMeta.committedButtonLabel
+    : alreadyInquired && group.type === "carpool"
+      ? "Driver confirms"
+      : alreadyInquired
+        ? groupMeta.commitLabel
+        : "Contact first";
 
   return (
     <article className={`ride-card status-${status}`}>
@@ -1867,21 +1904,31 @@ function RideCard({
             </span>
           )}
           {inquiries.length > 0 && (
-            <span>
-              <strong>{groupMeta.inquiriesLabel}</strong> {inquiries.map((rider) => rider.name).join(", ")}
-            </span>
+            <div className="inquiry-list">
+              <strong>{groupMeta.inquiriesLabel}</strong>
+              {inquiries.map((rider) => (
+                <span className="inquiry-item" key={rider.id}>
+                  {rider.name}
+                  {hostCanMarkInquiries && (
+                    <button className="text-button" type="button" onClick={() => onCommit(group.id, rider.id)}>
+                      Mark matched
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
           )}
         </div>
       )}
 
       <div className="card-actions">
-        <button className="secondary-button" type="button" disabled={!canAct || alreadyInquired} onClick={() => onInquire(group.id)}>
+        <button className="secondary-button" type="button" disabled={!canInquire} onClick={() => onInquire(group.id)}>
           <CircleAlert size={15} aria-hidden="true" />
           {alreadyInquired ? groupMeta.inquiredLabel : groupMeta.inquireLabel}
         </button>
-        <button className="primary-button small" type="button" disabled={!canAct} onClick={() => onCommit(group.id)}>
+        <button className="primary-button small" type="button" disabled={!canSelfMarkMatch} onClick={() => onCommit(group.id)}>
           <CheckCircle2 size={15} aria-hidden="true" />
-          {alreadyRiding ? groupMeta.committedButtonLabel : groupMeta.commitLabel}
+          {matchButtonText}
         </button>
         <select
           value={status}
@@ -1891,7 +1938,7 @@ function RideCard({
         >
           <option value="open">Open</option>
           <option value="pending">Pending</option>
-          <option value="committed">Committed</option>
+          <option value="committed">Matched</option>
           <option value="full">Full</option>
         </select>
       </div>
@@ -1905,7 +1952,8 @@ function ScorePill({ match }) {
 }
 
 function StatusBadge({ status }) {
-  return <span className={`status-badge status-${status}`}>{status}</span>;
+  const label = status === "committed" ? "matched" : status;
+  return <span className={`status-badge status-${status}`}>{label}</span>;
 }
 
 function Stat({ label, value }) {

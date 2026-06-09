@@ -1309,6 +1309,40 @@ button:focus-visible {
   line-height: 1.4;
 }
 
+.inquiry-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.inquiry-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 4px 5px 4px 9px;
+  background: #eef3ee;
+  color: #263644;
+  font-weight: 800;
+}
+
+.text-button {
+  min-height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: #263644;
+  color: #fff;
+  padding: 3px 8px;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.text-button:hover {
+  background: #172636;
+}
+
 .simple-app .card-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 120px;
