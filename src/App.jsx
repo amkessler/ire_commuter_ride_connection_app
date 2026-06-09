@@ -21,6 +21,7 @@ import {
   requestJoinRide,
   saveGroupStatus,
   saveParticipantWithGroups,
+  sendRideNotification,
 } from "./supabaseData";
 
 const storageKey = "ire-ride-connection-state-v1";
@@ -1013,6 +1014,11 @@ function App() {
       setAppError("");
       try {
         await requestJoinRide(groupId, selectedParticipant.id);
+        await sendRideNotification({
+          eventType: "inquiry_created",
+          groupId,
+          actorParticipantId: selectedParticipant.id,
+        });
         await loadRemoteBoard(session);
       } catch (error) {
         setAppError(error.message || "Unable to mark inquiry.");
@@ -1054,6 +1060,12 @@ function App() {
       setAppError("");
       try {
         await commitToRide(groupId, participantIdToMatch);
+        await sendRideNotification({
+          eventType: "match_marked",
+          groupId,
+          actorParticipantId: selectedParticipant.id,
+          targetParticipantId: participantIdToMatch,
+        });
         await loadRemoteBoard(session);
       } catch (error) {
         setAppError(error.message || "Unable to mark match.");

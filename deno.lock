@@ -1,0 +1,22 @@
+{
+  "version": "5",
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.108.0": "c825db8edcb1570c7ac5f330e39fb4a5f0e616cbad2300e0eaaa49d803c2244b"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@supabase/supabase-js@^2.108.0",
+        "npm:@vitejs/plugin-react@5",
+        "npm:eslint-plugin-react-hooks@5",
+        "npm:eslint-plugin-react-refresh@0.4",
+        "npm:eslint@9",
+        "npm:globals@15",
+        "npm:lucide-react@0.468",
+        "npm:react-dom@19",
+        "npm:react@19",
+        "npm:vite@7"
+      ]
+    }
+  }
+}
