@@ -175,6 +175,10 @@ a {
   font-weight: 800;
 }
 
+.form-message {
+  text-align: center;
+}
+
 .error-text {
   color: var(--danger);
   font-weight: 800;

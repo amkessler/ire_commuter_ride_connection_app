@@ -135,6 +135,19 @@ export async function saveParticipantWithGroups(participant, userId, groupsToCre
       hostId: savedParticipant.id,
     }, { includeStatus: false }),
   );
+  const activeGroupTypes = rideGroups.map((group) => group.type);
+
+  let staleGroupDelete = supabase
+    .from("ride_groups")
+    .delete()
+    .eq("host_participant_id", savedParticipant.id);
+
+  if (activeGroupTypes.length) {
+    staleGroupDelete = staleGroupDelete.not("type", "in", `(${activeGroupTypes.join(",")})`);
+  }
+
+  const { error: staleGroupError } = await staleGroupDelete;
+  if (staleGroupError) throw staleGroupError;
 
   if (rideGroups.length) {
     const { error: groupError } = await supabase

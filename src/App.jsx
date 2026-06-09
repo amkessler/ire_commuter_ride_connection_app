@@ -350,6 +350,24 @@ function loadInitialState() {
   };
 }
 
+function participantToForm(participant) {
+  if (!participant) return blankForm;
+
+  return {
+    name: participant.name || "",
+    email: participant.email || "",
+    phone: participant.phone || "",
+    neighborhood: participant.neighborhood || "",
+    corridor: participant.corridor || "dc-nw",
+    intent: participant.intent || "need-seat",
+    transportPreference: participant.transportPreference || "either",
+    seatsAvailable: participant.seatsAvailable ?? 1,
+    maxPartySize: participant.maxPartySize ?? 3,
+    availability: participant.availability || makeAvailability(["thuAm", "friAm"]),
+    notes: participant.notes || "",
+  };
+}
+
 function getCorridor(corridorId) {
   return corridors.find((corridor) => corridor.id === corridorId) || corridors[0];
 }
@@ -458,6 +476,7 @@ function App() {
   const [authCode, setAuthCode] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [appError, setAppError] = useState("");
+  const [rideInfoMessage, setRideInfoMessage] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasAdminMfaAccess, setHasAdminMfaAccess] = useState(false);
   const boardRequestId = useRef(0);
@@ -473,6 +492,12 @@ function App() {
       : participants.find((participant) => participant.id === selectedParticipantId)) ||
     ownParticipant ||
     participants[0];
+
+  useEffect(() => {
+    if (session && ownParticipant) {
+      setForm(participantToForm(ownParticipant));
+    }
+  }, [ownParticipant, session]);
 
   const refreshAdminMfaAccess = useCallback(async () => {
     if (!supabase) {
@@ -636,6 +661,7 @@ function App() {
   }
 
   function updateFormField(field, value) {
+    setRideInfoMessage("");
     setForm((current) => ({
       ...current,
       [field]: value,
@@ -643,6 +669,7 @@ function App() {
   }
 
   function updateAvailability(slotId) {
+    setRideInfoMessage("");
     setForm((current) => ({
       ...current,
       availability: {
@@ -654,6 +681,7 @@ function App() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    setRideInfoMessage("");
 
     const participantId = `p${Date.now()}`;
     const participant = {
@@ -717,8 +745,9 @@ function App() {
           groupsToCreate,
         );
         setSelectedParticipantId(savedParticipant.id);
-        setForm(blankForm);
+        setForm(participantToForm(savedParticipant));
         await loadRemoteBoard(session);
+        setRideInfoMessage("Ride info saved.");
       } catch (error) {
         setAppError(error.message || "Unable to save your ride info.");
       } finally {
@@ -733,6 +762,7 @@ function App() {
     });
     setSelectedParticipantId(participantId);
     setForm(blankForm);
+    setRideInfoMessage("Ride info added to the sample board.");
   }
 
   async function updateGroup(groupId, patch) {
@@ -977,13 +1007,16 @@ function App() {
           <section className="tool-block form-panel">
             <div className="section-heading">
               <UserPlus size={18} aria-hidden="true" />
-              <h2>Add your ride info</h2>
+              <h2>{ownParticipant ? "Edit your ride info" : "Add your ride info"}</h2>
             </div>
             <EntryForm
               form={form}
               onSubmit={handleSubmit}
               onFieldChange={updateFormField}
               onAvailabilityChange={updateAvailability}
+              isSaving={isSyncing}
+              saveMessage={rideInfoMessage}
+              submitLabel={ownParticipant ? "Save ride info" : "Add to board"}
             />
           </section>
 
@@ -1498,7 +1531,15 @@ function PrototypeTools({ isSignedIn, resetSamples }) {
   );
 }
 
-function EntryForm({ form, onSubmit, onFieldChange, onAvailabilityChange }) {
+function EntryForm({
+  form,
+  isSaving,
+  onSubmit,
+  onFieldChange,
+  onAvailabilityChange,
+  saveMessage,
+  submitLabel,
+}) {
   return (
     <form className="entry-form" onSubmit={onSubmit}>
       <div className="field-grid">
@@ -1624,10 +1665,11 @@ function EntryForm({ form, onSubmit, onFieldChange, onAvailabilityChange }) {
         />
       </label>
 
-      <button className="primary-button" type="submit">
+      <button className="primary-button" disabled={isSaving} type="submit">
         <Plus size={16} aria-hidden="true" />
-        Add to board
+        {isSaving ? "Saving..." : submitLabel}
       </button>
+      {saveMessage && <p className="success-text form-message">{saveMessage}</p>}
     </form>
   );
 }
