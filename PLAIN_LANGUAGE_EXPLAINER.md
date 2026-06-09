@@ -91,15 +91,12 @@ ire_ride_connection_app/
   SUPABASE_AUTH_CHECKLIST.md
   package.json
   package-lock.json
-  deno.lock
   index.html
   vite.config.js
   eslint.config.js
   .gitignore
   supabase/
     migrations/
-    functions/
-      send-ride-notification/
   src/
     main.jsx
     App.jsx
@@ -571,31 +568,13 @@ The app uses a few Supabase RPC functions:
 
 Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can ask about a ride or record an agreed match.
 
-The `commit_to_ride` name is now a little historical. In the simple interface, the user-facing action is "mark matched." The RPC keeps the older name, but it now requires a prior inquiry and checks who is allowed to mark the match:
+The `commit_to_ride` name is now a little historical. In the simple interface, the user-facing action is "mark matched." The RPC keeps the older name, but it now requires a prior contact marker and checks who is allowed to mark the match:
 
 - For driver carpools, the driver finalizes the match.
-- For carpool requests, a helper must offer help first.
-- For Uber/Lyft splits, either the organizer or the inquirer can mark the match after the inquiry exists.
+- For carpool requests, a helper must mark that they offered help first.
+- For Uber/Lyft splits, either the organizer or the contacted participant can mark the match after the contact marker exists.
 
 The important engineering rule is not "never use security-definer functions." The rule is "make them small, explicit, and carefully permission-checked."
-
-## Supabase Edge Function: Email Alerts
-
-The app also includes a Supabase Edge Function:
-
-```text
-supabase/functions/send-ride-notification/index.ts
-```
-
-This function sends email alerts after:
-
-- Someone sends an inquiry.
-- Someone offers help on a carpool request.
-- A match is marked.
-
-The browser does not send email directly. It calls the Edge Function, the function verifies the signed-in user, looks up the relevant participants, and then sends mail through Resend.
-
-That split matters. A browser app should not contain a private email-provider API key. The key belongs on the server side as a Supabase function secret.
 
 ## React Components: The App As Reusable Pieces
 
@@ -621,7 +600,7 @@ For example, `RideCard` receives:
 - The participant list so it can look up names.
 - The selected participant so it can calculate actions.
 - The match score.
-- Functions for inquiry, offer-help, match, notification, and status changes.
+- Functions for direct-contact markers, match recording, and status changes.
 
 This is called passing props.
 
@@ -698,7 +677,7 @@ This matches the user's workflow:
 2. Add or review ride information.
 3. Browse available ride groups.
 4. Evaluate matches from the correct person's point of view.
-5. Inquire, offer help, contact the other person directly, then mark a match after agreement.
+5. Contact the other person directly by email or phone, mark that contact happened, then mark a match after agreement.
 
 The app uses cards for individual rides, which makes sense because each ride is a repeated item with its own status, people, capacity, and actions.
 
@@ -740,7 +719,7 @@ A car icon next to "Driver carpool" and a people icon next to "Uber/Lyft split" 
 
 ## Why We Built The Front End First
 
-It would be tempting to jump straight to a database, login system, email notifications, and admin tools.
+It would be tempting to jump straight to a database, login system, automated email notifications, and admin tools.
 
 At the very beginning, that would have been premature.
 
@@ -748,7 +727,7 @@ The hard part of this project is not creating a table in a database. The hard pa
 
 - How should rides be grouped?
 - What does "full" mean?
-- How do inquiries differ from final matches?
+- How do contact markers differ from final matches?
 - How should route fit be communicated?
 - How do carpool seats differ from Uber/Lyft split capacity?
 
@@ -756,7 +735,7 @@ Building the front-end prototype first let us answer those questions quickly.
 
 Good engineering often means delaying expensive decisions until the shape of the problem is clearer.
 
-Then, once the workflow had a shape, we added Supabase. Later, after the team knew which user actions should alert another person, we added the notification Edge Function.
+Then, once the workflow had a shape, we added Supabase.
 
 That sequence matters. The backend now supports a model we understand instead of forcing the product to fit a schema we guessed too early.
 
@@ -911,7 +890,7 @@ The smoke test:
 - Confirmed the main heading rendered.
 - Added a sample participant.
 - Confirmed a new ride card appeared.
-- Clicked inquiry and commit actions.
+- Clicked contact and match actions.
 - Captured desktop and mobile screenshots.
 
 Lesson: verification matters more than a specific tool. If one verification path is blocked, find another reliable path.
@@ -956,6 +935,8 @@ Commit
 ```
 
 The simple branch later changed the user-facing final action again to "Mark matched," because that better reflects the new rule that people should talk first and only record the match afterward.
+
+It also changed "Inquire" into "Mark contacted" or "Mark help offered." That is a more honest label when the app is not sending automated email.
 
 The meaning stayed clear, and the layout became cleaner.
 
@@ -1099,15 +1080,15 @@ Lesson: fewer choices are not always simpler. A vague choice can push complexity
 
 Stakeholders pointed out that attendees should talk by email or phone before anyone records a final match.
 
-That changed the workflow. The app now treats inquiry as the first step and match as the recorded outcome after mutual agreement.
+That changed the workflow. The app now treats direct contact as the first step and match as the recorded outcome after mutual agreement.
 
 The fix included frontend and database logic:
 
-- Inquire or offer help first.
-- Disable match actions until the inquiry exists.
+- Email or call first.
+- Mark that contact or a help offer happened.
+- Disable match actions until the contact marker exists.
 - Let carpool drivers finalize their own carpool matches.
 - Let Uber/Lyft organizers or inquirers mark a match after contact.
-- Send email alerts from the Supabase Edge Function when inquiries/offers and matches happen.
 
 Lesson: the right button is not always the fastest button. Sometimes good product design slows one action down so the real-world agreement is cleaner.
 
@@ -1290,39 +1271,11 @@ In this app it handles:
 - Row-level security.
 - Database migrations.
 - RPC functions for ride actions.
-- Edge Functions for notification emails.
 - MFA-aware admin access.
 
 Supabase is helpful here because the app needs a real shared board, not just a single-user browser notebook.
 
 The important lesson is that Supabase is not just "where the data lives." It is also where security rules live. The database is responsible for enforcing who can see and change what.
-
-## Deno And Supabase Edge Functions
-
-Supabase Edge Functions run on Deno, not Node.
-
-That is why the project now has:
-
-```text
-deno.lock
-supabase/functions/send-ride-notification/index.ts
-```
-
-The practical lesson is simple: frontend code runs in the user's browser, but notification code runs in Supabase. That lets the app keep private secrets, such as the email-provider API key, out of the browser.
-
-## Resend
-
-Resend is the email delivery service used by the notification Edge Function.
-
-The function needs these Supabase secrets before emails can actually go out:
-
-```text
-RESEND_API_KEY
-NOTIFICATION_FROM_EMAIL
-APP_PUBLIC_URL
-```
-
-The first two are required. `APP_PUBLIC_URL` is optional but useful because it lets emails point people back to the app.
 
 ## ESLint
 
@@ -1385,15 +1338,9 @@ src/supabaseData.js
   fetches the board
   saves participants and ride groups
   calls ride action RPCs
-  calls the notification Edge Function
 
 supabase/migrations/
   defines tables, policies, functions, and constraints
-
-supabase/functions/send-ride-notification/
-  verifies the actor
-  looks up the ride and recipient
-  sends email through Resend
 
 src/styles.css
   controls layout, colors, spacing, responsive behavior
@@ -1421,18 +1368,14 @@ attendee fills form
   -> stats update
 ```
 
-And here is the inquiry and notification flow:
+And here is the contact-first match flow:
 
 ```text
-attendee clicks Inquire or Offer help
-  -> app records a ride inquiry
-  -> app calls send-ride-notification
-  -> Edge Function verifies the signed-in user
-  -> Edge Function emails the host or requester
-  -> people talk directly
+attendee clicks Email or Phone
+  -> people talk directly outside the app
+  -> attendee marks contact or help offered in the app
   -> allowed user marks the match
   -> app records the membership/match
-  -> Edge Function emails the other person
 ```
 
 ## What Would Come Next
@@ -1441,16 +1384,15 @@ This app is now a working React/Supabase foundation, but it is not the final pro
 
 Good next steps:
 
-1. Deploy the `send-ride-notification` Edge Function and configure Resend secrets in the hosted Supabase project.
-2. Add timestamps and update reminders.
-3. Add organizer exports.
-4. Add optional pickup coordinates or meeting points.
-5. Add real route/detour estimates.
-6. Add privacy controls for contact information.
-7. Add dedicated admin moderation screens.
-8. Add import from the original Google Sheet.
-9. Keep the hosted email template under source-control notes/checklists so future changes do not accidentally remove `{{ .Token }}`.
-10. Deploy with production redirect URLs.
+1. Add timestamps and update reminders.
+2. Add organizer exports.
+3. Add optional pickup coordinates or meeting points.
+4. Add real route/detour estimates.
+5. Add privacy controls for contact information.
+6. Add dedicated admin moderation screens.
+7. Add import from the original Google Sheet.
+8. Keep the hosted email template under source-control notes/checklists so future changes do not accidentally remove `{{ .Token }}`.
+9. Deploy with production redirect URLs.
 
 ## Backend Options We Considered
 
@@ -1669,19 +1611,6 @@ supabase db push
 supabase migration list
 ```
 
-The notification function can be checked locally with:
-
-```bash
-deno check supabase/functions/send-ride-notification/index.ts
-```
-
-For hosted email alerts, deploy the function and set secrets:
-
-```bash
-supabase functions deploy send-ride-notification
-supabase secrets set RESEND_API_KEY=... NOTIFICATION_FROM_EMAIL='IRE Ride Connection <rides@example.org>' APP_PUBLIC_URL='https://your-app-url.example'
-```
-
 ## How To Check The App
 
 Useful commands:
@@ -1689,7 +1618,6 @@ Useful commands:
 ```bash
 npm run lint
 npm run build
-deno check supabase/functions/send-ride-notification/index.ts
 supabase db advisors --linked --type security --level info
 ```
 
@@ -1722,7 +1650,7 @@ Do not skip visual inspection. Front-end bugs often live in the space between "t
 
 `riderIds`: Participants who have been matched into a group. In the database this is still stored through `ride_memberships`.
 
-`inquiries`: Participants who have asked about joining or offered help but are not matched yet.
+`inquiries`: The internal database name for participants who have marked contact or offered help but are not matched yet.
 
 `corridor`: A regional route bucket, such as DC Northwest or Arlington/Alexandria.
 
@@ -1735,10 +1663,6 @@ Do not skip visual inspection. Front-end bugs often live in the space between "t
 `localStorage`: Browser-only storage used for signed-out sample mode.
 
 `Supabase`: The hosted backend for auth, database storage, migrations, row-level security, and RPCs.
-
-`Edge Function`: Server-side Supabase code used here to send notification emails without exposing private email-provider secrets to the browser.
-
-`Resend`: The email delivery provider used by the notification Edge Function.
 
 `one-time code`: A short-lived email code that signs a user in without a password.
 

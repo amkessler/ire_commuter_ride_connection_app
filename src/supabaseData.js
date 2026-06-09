@@ -176,26 +176,6 @@ export async function requestJoinRide(groupId, participantId) {
   if (error) throw error;
 }
 
-export async function sendRideNotification({ eventType, groupId, actorParticipantId, targetParticipantId }) {
-  if (!supabase) return { sent: false, reason: "supabase_not_configured" };
-
-  const { data, error } = await supabase.functions.invoke("send-ride-notification", {
-    body: {
-      eventType,
-      groupId,
-      actorParticipantId,
-      targetParticipantId,
-    },
-  });
-
-  if (error) {
-    console.warn("Ride notification was not sent.", error.message);
-    return { sent: false, reason: error.message };
-  }
-
-  return data;
-}
-
 export async function commitToRide(groupId, participantId) {
   if (!supabase) throw new Error("Supabase is not configured.");
   const { error } = await supabase.rpc("commit_to_ride", {

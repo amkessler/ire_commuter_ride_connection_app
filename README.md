@@ -9,13 +9,13 @@ The app has two primary areas:
 - `Your plan`: one form where a signed-in attendee creates or edits their single ride profile.
 - `Likely matches`: a compact list of relevant carpool offers, carpool requests, and Uber/Lyft split groups.
 
-Users can share direct contact details, send an inquiry or offer help, and then mark a match only after there has been contact. The UI deliberately avoids letting someone instantly commit to another attendee's ride without a prior inquiry.
+Users can share direct contact details, use email or phone to reach each other, mark that contact or a help offer happened, and then mark a match only after there has been mutual agreement. The UI deliberately avoids letting someone instantly commit to another attendee's ride without prior contact.
 
 The workflow rules are:
 
 - Carpool drivers can mark final matches for their own carpool offers.
-- For carpool requests, a potential helper must offer help before the request can be marked matched.
-- For Uber/Lyft split groups, either the organizer or the inquiring participant can mark the group matched after an inquiry.
+- For carpool requests, a potential helper must mark that they offered help before the request can be marked matched.
+- For Uber/Lyft split groups, either the organizer or the contacted participant can mark the group matched after contact is recorded.
 - The database still stores `committed` as the final status value, but the simple UI presents that state as `matched`.
 
 ## Core Data Model
@@ -41,20 +41,7 @@ The workflow rules are:
 - `capacity`
 - `status`: `open`, `pending`, `committed`, or `full`
 - `availability`
-- `inquiries`: participant IDs that have asked about the ride or offered help
-
-## Notifications
-
-The frontend calls a Supabase Edge Function named `send-ride-notification` after inquiry/offer-help actions and after matches are marked. Notification failure is logged but does not block the ride workflow.
-
-Email delivery requires the Edge Function to be deployed and configured:
-
-```bash
-supabase functions deploy send-ride-notification
-supabase secrets set RESEND_API_KEY=... NOTIFICATION_FROM_EMAIL='IRE Ride Connection <rides@example.org>' APP_PUBLIC_URL='https://your-app-url.example'
-```
-
-`APP_PUBLIC_URL` is optional but recommended so emails can link back to the app. The function uses Resend for outbound mail and Supabase Auth/RLS checks to confirm the actor owns the participant profile making the request.
+- `inquiries`: participant IDs that have marked contact or offered help. This is an internal database name; the simple UI presents it as contact tracking.
 
 ## Matching Logic
 
@@ -109,7 +96,7 @@ Security checks:
 supabase db advisors --linked --type security --level info
 ```
 
-The app intentionally exposes three authenticated RPCs: `get_my_role`, `request_join_ride`, and `commit_to_ride`. `commit_to_ride` now requires a prior inquiry and enforces the simple-version match rules. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
+The app intentionally exposes three authenticated RPCs: `get_my_role`, `request_join_ride`, and `commit_to_ride`. `request_join_ride` records that contact/help was initiated, while `commit_to_ride` requires that prior contact marker and enforces the simple-version match rules. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
 
 Regular users sign in by email one-time code. The hosted Supabase email template has been updated through the Management API to send `{{ .Token }}` instead of a magic sign-in link.
 

@@ -21,7 +21,6 @@ import {
   requestJoinRide,
   saveGroupStatus,
   saveParticipantWithGroups,
-  sendRideNotification,
 } from "./supabaseData";
 
 const storageKey = "ire-ride-connection-state-v1";
@@ -487,10 +486,10 @@ function getGroupTypeMeta(type) {
       contactName: "Driver",
       committedLabel: "Matched riders:",
       emptyCommitted: "No riders committed yet",
-      inquiriesLabel: "Inquiries:",
-      emptyInquiries: "No open inquiries",
-      inquireLabel: "Inquire",
-      inquiredLabel: "Inquiry sent",
+      inquiriesLabel: "Contacted by:",
+      emptyInquiries: "No contact noted",
+      inquireLabel: "Mark contacted",
+      inquiredLabel: "Contact noted",
       commitLabel: "Driver confirms",
       committedButtonLabel: "Matched",
       statusLabel: "Ride status",
@@ -504,10 +503,10 @@ function getGroupTypeMeta(type) {
       contactName: "Requester",
       committedLabel: "Matched offers:",
       emptyCommitted: "No matched offers yet",
-      inquiriesLabel: "Offers to help:",
-      emptyInquiries: "No offers yet",
-      inquireLabel: "Offer help",
-      inquiredLabel: "Offer sent",
+      inquiriesLabel: "Help offered by:",
+      emptyInquiries: "No help offers noted",
+      inquireLabel: "Mark help offered",
+      inquiredLabel: "Help offer noted",
       commitLabel: "Mark matched",
       committedButtonLabel: "Matched",
       statusLabel: "Request status",
@@ -520,10 +519,10 @@ function getGroupTypeMeta(type) {
     contactName: "Organizer",
     committedLabel: "Matched:",
     emptyCommitted: "No riders committed yet",
-    inquiriesLabel: "Inquiries:",
-    emptyInquiries: "No open inquiries",
-    inquireLabel: "Inquire",
-    inquiredLabel: "Inquiry sent",
+    inquiriesLabel: "Contacted by:",
+    emptyInquiries: "No contact noted",
+    inquireLabel: "Mark contacted",
+    inquiredLabel: "Contact noted",
     commitLabel: "Mark matched",
     committedButtonLabel: "Matched",
     statusLabel: "Ride status",
@@ -1014,14 +1013,9 @@ function App() {
       setAppError("");
       try {
         await requestJoinRide(groupId, selectedParticipant.id);
-        await sendRideNotification({
-          eventType: "inquiry_created",
-          groupId,
-          actorParticipantId: selectedParticipant.id,
-        });
         await loadRemoteBoard(session);
       } catch (error) {
-        setAppError(error.message || "Unable to mark inquiry.");
+        setAppError(error.message || "Unable to mark contact.");
       } finally {
         setIsSyncing(false);
       }
@@ -1060,12 +1054,6 @@ function App() {
       setAppError("");
       try {
         await commitToRide(groupId, participantIdToMatch);
-        await sendRideNotification({
-          eventType: "match_marked",
-          groupId,
-          actorParticipantId: selectedParticipant.id,
-          targetParticipantId: participantIdToMatch,
-        });
         await loadRemoteBoard(session);
       } catch (error) {
         setAppError(error.message || "Unable to mark match.");
