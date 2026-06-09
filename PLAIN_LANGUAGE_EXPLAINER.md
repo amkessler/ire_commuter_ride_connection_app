@@ -29,9 +29,13 @@ Second, it displays active ride options. These are shown as ride cards. A card m
 
 Third, it helps users judge fit. The app scores potential matches based on timing, route corridor, ride type, status, and capacity. A good match appears higher. A bad match, such as a driver having to make a major detour, gets pushed lower.
 
-The app does not yet send emails, create user accounts, or store data on a server. It is a working front-end prototype with local data storage in the browser.
+The app now has two operating modes.
 
-That is intentional. The first goal was to model the workflow clearly before committing to a database or backend.
+When someone is signed out, it still behaves like a prototype: it shows realistic sample data and can keep local demo changes in the browser. That is useful for demos, design review, and quick testing.
+
+When someone signs in, the app uses Supabase for shared data. Supabase handles email sign-in, the Postgres database, row-level security, and admin MFA requirements. That means the project has moved past "just a front-end mockup" while still keeping the sample-data mode that made early iteration fast.
+
+The first goal was to model the workflow clearly. Once the workflow made sense, Supabase became the shared backend.
 
 ## The Big Idea: Geography Matters
 
@@ -80,15 +84,20 @@ Here is the important file structure:
 ire_ride_connection_app/
   README.md
   PLAIN_LANGUAGE_EXPLAINER.md
+  SUPABASE_AUTH_CHECKLIST.md
   package.json
   package-lock.json
   index.html
   vite.config.js
   eslint.config.js
   .gitignore
+  supabase/
+    migrations/
   src/
     main.jsx
     App.jsx
+    supabaseClient.js
+    supabaseData.js
     styles.css
 ```
 
@@ -119,6 +128,7 @@ The main dependencies are:
 - `react`: the UI library.
 - `react-dom`: connects React to the browser page.
 - `vite`: the development server and build tool.
+- `@supabase/supabase-js`: browser client for Supabase Auth, database queries, and RPC calls.
 - `@vitejs/plugin-react`: lets Vite understand React.
 - `lucide-react`: icon library used for buttons, labels, and visual cues.
 - `eslint`: code quality checker.
@@ -133,7 +143,7 @@ For this project, Vite was a good fit because:
 
 - The app is front-end focused.
 - It needs quick iteration.
-- It does not need a complicated backend yet.
+- It can start simple while still connecting cleanly to a backend.
 - It keeps the starter project small and understandable.
 
 ## `index.html`: The Empty Stage
@@ -182,7 +192,9 @@ This file contains:
 - The sample data.
 - The route corridor model.
 - The matching logic.
-- The local storage logic.
+- The signed-out local storage fallback.
+- The signed-in Supabase sync flow.
+- The auth and admin MFA panels.
 - The form behavior.
 - The ride card behavior.
 - The React components that render the interface.
@@ -191,7 +203,7 @@ For a larger production app, we would eventually split this into smaller files. 
 
 That is a pragmatic engineering choice. Splitting code too early can make a small project harder to follow. Splitting code too late can make a large project hard to maintain. The trick is choosing the right level of structure for the current stage.
 
-This project is still in prototype territory, so one main app file is acceptable.
+This project is still compact enough that one main app file is understandable, but the Supabase data access has already been split into helper files. That is a good sign of the architecture growing only where it has real pressure.
 
 ## The Data Model
 
@@ -440,27 +452,28 @@ group.riderIds.length + 1
 
 That `+ 1` is easy to miss, but it matters. It prevents the app from acting like the host is not in the vehicle.
 
-## Local Storage: The Temporary Notebook
+## Storage: Sample Notebook Plus Shared Database
 
-The app stores changes in browser local storage.
+The app still uses browser local storage when no Supabase session is active.
 
-That means if you add someone, mark an inquiry, or commit a rider, the data stays in your browser after a page refresh.
+That means a signed-out demo can add someone, mark an inquiry, or commit a rider, and those demo changes stay in that browser after a page refresh.
 
 Local storage is like a notebook taped to your own laptop. It is useful while you are working, but nobody else can see it.
 
-That is fine for this prototype.
+That is why it is now treated as sample/prototype behavior, not the real shared system.
 
-It is not enough for production.
+When a user signs in, the app switches to Supabase.
 
-In production, this data should live in a shared backend such as:
+Supabase provides:
 
-- Supabase
-- Airtable
-- Google Sheets API
-- Firebase
-- A small custom API and database
+- Email magic-link authentication.
+- A shared Postgres database.
+- Row-level security policies.
+- Remote participant and ride group storage.
+- Admin role checks.
+- MFA step-up for admin-only privileges.
 
-Until then, local storage lets us test the workflow without spending time on authentication, hosting, permissions, and database setup.
+That gives the app a useful split personality: local sample data for quick demos, shared Supabase data for real users.
 
 ## State Flow: How A Form Becomes A Ride Card
 
@@ -473,16 +486,82 @@ Here is the journey when someone fills out the form.
 5. If the participant is offering carpool seats, the app creates a new carpool group.
 6. If the participant wants to split Uber/Lyft, the app creates a rideshare group.
 7. The participant and any new groups are saved into app state.
-8. The same data is written into local storage.
-9. React re-renders the board.
+8. If the user is signed out, the same data is written into local storage.
+9. If the user is signed in, the participant is upserted to Supabase.
+10. If the participant is hosting a carpool or rideshare group, the hosted group is upserted too.
+11. React reloads the board and re-renders the interface.
 
 That is the central React loop:
 
 ```text
-user action -> state changes -> interface redraws
+user action -> local state or Supabase update -> board reloads -> interface redraws
 ```
 
 Once you understand that loop, React becomes much less mysterious.
+
+## Supabase: The Shared Filing Cabinet With Locks
+
+Supabase is now the app's shared backend.
+
+In plain language, Supabase gives us:
+
+- A database where everyone sees the same current board.
+- A sign-in system so the app knows who is editing.
+- Security rules so one user cannot freely read or change another user's private profile.
+- Admin tools that can be unlocked only for trusted accounts.
+
+The main database tables are:
+
+- `profiles`: basic auth-linked user profile information.
+- `participants`: the full ride profile for a signed-in user, including contact info.
+- `participant_directory`: a public-safe directory table that exposes only the fields needed for matching.
+- `ride_groups`: carpool and Uber/Lyft split groups.
+- `ride_memberships`: committed riders.
+- `ride_inquiries`: people who have asked about a ride but are not committed.
+- `admin_users`: the list of auth users who are allowed to become admins.
+
+The `participant_directory` table is worth calling out. Earlier, this was modeled as a view. The safer version is a real table with row-level security. A trigger keeps it synchronized with `participants`, but it does not expose private fields like phone numbers to every signed-in user.
+
+Think of it like a conference badge. The badge can show your name and neighborhood for coordination. It does not need to print your whole registration record.
+
+## Row-Level Security: Locks On Every Drawer
+
+Supabase row-level security, often shortened to RLS, is how the database decides who can see or change each row.
+
+The React UI hides controls that a regular user should not use. But hiding a button is not security. A determined person can still call APIs directly.
+
+So the real enforcement lives in the database.
+
+Regular users can manage their own participant record. Authenticated users can see the public-safe directory and ride groups. Admins can do more, but only after passing MFA.
+
+That last point matters: the app separates "this account is listed as an admin" from "this session currently has admin power."
+
+## Admin MFA: Showing The Door Before Opening It
+
+Admin accounts are listed in `public.admin_users`.
+
+The app uses `get_my_role()` so a signed-in admin can be recognized and shown the MFA panel. But admin-only RLS policies use private helper functions that require both:
+
+- The user is listed as an admin.
+- The current session has Supabase authenticator assurance level `aal2`.
+
+That means a returning admin can see the prompt to enter an authenticator code, but the database will not treat them as fully privileged until MFA succeeds.
+
+This fixes a subtle trap. If the app waited for full MFA-verified admin access before showing the MFA panel, returning admins could get stuck outside the very control they needed to unlock admin access.
+
+Good security often works this way: show the right locked door, but do not hand over the keys until the second check passes.
+
+## App-Facing RPCs
+
+The app uses a few Supabase RPC functions:
+
+- `get_my_role`
+- `request_join_ride`
+- `commit_to_ride`
+
+Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can ask to join or commit to a ride.
+
+The important engineering rule is not "never use security-definer functions." The rule is "make them small, explicit, and carefully permission-checked."
 
 ## React Components: The App As Reusable Pieces
 
@@ -564,18 +643,30 @@ The design is meant to feel like a practical coordination board, not a marketing
 
 There is no giant hero section. There is no decorative pitch copy. The first screen is the actual tool.
 
-The layout has three main zones:
+The first version put almost everything on one dashboard. It worked, but it felt busy. That was useful feedback: the app was doing the right things, but it was asking users to absorb too much at once.
 
-- Left: add your ride info.
-- Center: route map and ride board.
-- Right: selected participant, best fits, and prototype reset.
+The current version is organized into four tabs:
+
+- `Find rides`: browse and filter open ride options.
+- `Add info`: enter or update your own ride profile.
+- `Route map`: see the regional corridor model.
+- `Status`: focus on capacity and commitments.
+
+That tab structure lowers the mental load. It is the difference between having every paper spread across a desk and putting them into labeled folders.
+
+Inside the main ride-finding view, the layout still has three conceptual zones:
+
+- Main area: open rides and shared ride pools.
+- Controls: search, corridor, and status filters.
+- Side panel: selected participant view, best fits, and prototype/admin tools.
 
 This matches the user's workflow:
 
-1. Add or review a person.
-2. Look at available ride groups.
-3. Evaluate matches from a specific person's point of view.
-4. Mark inquiry or commitment status.
+1. Sign in or use sample mode.
+2. Add or review ride information.
+3. Browse available ride groups.
+4. Evaluate matches from the correct person's point of view.
+5. Mark inquiry or commitment status.
 
 The app uses cards for individual rides, which makes sense because each ride is a repeated item with its own status, people, capacity, and actions.
 
@@ -617,11 +708,11 @@ The goal is not decoration. Icons help users scan the interface faster.
 
 A car icon next to "Driver carpool" and a people icon next to "Uber/Lyft split" makes the difference between ride types easier to catch at a glance.
 
-## Why We Did Not Build A Backend Yet
+## Why We Built The Front End First
 
 It would be tempting to jump straight to a database, login system, email notifications, and admin tools.
 
-But that would be premature.
+At the very beginning, that would have been premature.
 
 The hard part of this project is not creating a table in a database. The hard part is understanding the coordination workflow:
 
@@ -631,9 +722,13 @@ The hard part of this project is not creating a table in a database. The hard pa
 - How should route fit be communicated?
 - How do carpool seats differ from Uber/Lyft split capacity?
 
-Building the front-end prototype first lets us answer those questions quickly.
+Building the front-end prototype first let us answer those questions quickly.
 
 Good engineering often means delaying expensive decisions until the shape of the problem is clearer.
+
+Then, once the workflow had a shape, we added Supabase.
+
+That sequence matters. The backend now supports a model we understand instead of forcing the product to fit a schema we guessed too early.
 
 That does not mean avoiding architecture. It means choosing architecture that matches the stage of the project.
 
@@ -701,24 +796,50 @@ Why this was good:
 
 Lesson: if users will act on a recommendation, they need to understand it well enough to trust it.
 
-## Decision: Use Local Storage
+## Decision: Keep Local Sample Mode While Adding Supabase
 
-Local storage gave us persistence without a backend.
+Local storage gave us early persistence without a backend. Supabase later gave us shared persistence with authentication and database security.
 
 Why this was good:
 
-- Faster prototype.
-- No auth setup.
-- No hosting setup.
-- No database schema migrations.
+- The first prototype was fast.
+- The app could be tested before auth existed.
+- Sample mode still works when Supabase env vars are missing.
+- Signed-in mode now has real shared data.
 
 The tradeoff:
 
-- Data is only saved in one browser.
-- Multiple users cannot share the same live board.
-- There is no permission model.
+- Local sample data is still only saved in one browser.
+- Real shared data requires Supabase configuration.
+- Developers must be careful not to confuse sample mode with production behavior.
 
-Lesson: local storage is a useful sketchpad, not the final filing cabinet.
+Lesson: local storage is a useful sketchpad. Supabase is the shared filing cabinet.
+
+## Decision: Use Magic Links For Sign-In
+
+The app uses Supabase email sign-in.
+
+We originally planned around one-time numeric codes. When tested against the hosted Supabase project, the email sent a sign-in link instead. That was not a React bug. It was Supabase behavior: on the free tier with the default email provider, hosted email template edits are not available, so we could not switch the email body to use `{{ .Token }}`.
+
+The pragmatic fix was to make magic links the expected user flow and keep the code field as optional future support.
+
+Why this was good:
+
+- It matched what Supabase could actually send in this project.
+- Users no longer expect a code that will not arrive.
+- The app can still support OTP later if the project adds custom SMTP or a plan that permits template edits.
+
+Lesson: good engineering means aligning the UI with the real behavior of the platform, not the behavior we hoped it would have.
+
+## Decision: Require MFA For Admin Privileges
+
+The app has admin troubleshooting features, such as previewing matches from another participant's point of view.
+
+Those tools are useful for support, but they should not be available to every signed-in user.
+
+The database now requires admin membership plus MFA verification before granting admin-level RLS access. The UI mirrors that by showing an admin MFA panel to admin accounts.
+
+Lesson: admin tools are powerful because they cross normal user boundaries. Treat them like a locked maintenance room, not like a hidden menu item.
 
 ## Bugs And Issues We Ran Into
 
@@ -849,6 +970,66 @@ test-results
 
 Lesson: every project should draw a line between source files and generated files. Otherwise the repository becomes noisy quickly.
 
+## Issue 7: Supabase Sent A Link Instead Of A Numeric Code
+
+The app called Supabase's `signInWithOtp()`, and the UI originally told users to expect a one-time code.
+
+During real testing, Supabase sent a magic sign-in link.
+
+That was confusing but not mysterious. Supabase can support token-based emails, but hosted email template edits are not available for this free-tier project while using the default email provider. When we tried to patch the email template through the Management API, Supabase rejected the change with a clear message: custom email template modification requires a different plan or custom SMTP.
+
+The fix was to change the app copy:
+
+- Primary action: "Send sign-in link."
+- Message: "Check your email for a secure sign-in link."
+- Code field: "One-time code, if provided."
+
+Lesson: always test auth emails end to end. Authentication is where product copy, provider settings, pricing limits, and user expectations collide.
+
+## Issue 8: Admin MFA Had A Chicken-And-Egg Problem
+
+Admin privileges require MFA. But the app also needs to show admins the MFA challenge panel.
+
+At one point, `get_my_role()` treated someone as an admin only after MFA was already verified. That created a trap: returning admins could need MFA to become admin, but need admin status to see the MFA panel.
+
+The fix was to separate two questions:
+
+- Is this account listed as an admin?
+- Does this session currently have MFA-verified admin access?
+
+`get_my_role()` answers the first question. Private RLS helper functions answer the second question.
+
+Lesson: authentication systems often need a "recognized but not elevated yet" state. Model that state directly.
+
+## Issue 9: Supabase Security Advisor Warnings Needed Judgment
+
+Supabase warned that signed-in users can execute several security-definer functions.
+
+That warning is useful. It made us inspect the functions carefully.
+
+But the answer was not to blindly revoke everything. The app needs narrow RPCs for:
+
+- Getting the current user's role.
+- Requesting to join a ride.
+- Committing to a ride.
+
+The fix was to move general helper functions out of the exposed public surface, revoke unneeded execution grants, and leave only the intentional app RPCs callable by authenticated users.
+
+Lesson: security tools point to places that deserve attention. They do not replace engineering judgment.
+
+## Issue 10: Profile Updates Could Create Duplicate Ride Groups
+
+The participant save path upserted the participant but inserted ride groups every time.
+
+That meant a user could update their profile and accidentally create another hosted carpool or rideshare group.
+
+The fix had two parts:
+
+- Database constraint: one host can have at most one carpool group and one rideshare group.
+- Client behavior: save uses an upsert for hosted groups instead of a blind insert.
+
+Lesson: prevent duplicates at the database layer, not only in the UI. The UI is a helpful front door, but the database is the foundation.
+
 ## What Good Engineers Did Here
 
 This project shows several habits that matter in real software work.
@@ -869,9 +1050,9 @@ That matters. In a shared workspace, unrecognized changes may belong to someone 
 
 Good engineers avoid cleaning up things they do not own.
 
-## They Built The Simplest Thing That Models The Real Problem
+## They Built The Simplest Thing First, Then Added The Backend
 
-The app does not have accounts or a backend yet. But it does model:
+The first version focused on modeling:
 
 - People.
 - Groups.
@@ -884,7 +1065,9 @@ The app does not have accounts or a backend yet. But it does model:
 
 That is the valuable core.
 
-Good engineers do not confuse "more infrastructure" with "more progress."
+Then Supabase was added once the model had proven useful.
+
+Good engineers do not confuse "more infrastructure" with "more progress." They also do not avoid infrastructure forever. They add it when the product has earned it.
 
 ## They Verified Behavior, Not Just Syntax
 
@@ -924,15 +1107,15 @@ How to avoid trouble:
 - Add maps/geocoding later if the app becomes operational.
 - Ask drivers to specify pickup constraints.
 
-## Pitfall: Local Storage Feels Real But Is Not Shared
+## Pitfall: Sample Mode Can Be Mistaken For Real Shared Data
 
-Local storage can trick you. It makes the app feel persistent, but only on one browser.
+Local storage can trick you. In signed-out sample mode, it makes the app feel persistent, but only on one browser.
 
 How to avoid trouble:
 
-- Treat this as a prototype.
-- Move data to a shared backend before public use.
-- Add export/import if you need an interim bridge.
+- Treat signed-out data as demo data.
+- Use signed-in Supabase mode for real shared coordination.
+- Make the UI clear when the app is in sample mode.
 
 ## Pitfall: Contact Info Is Sensitive
 
@@ -1015,6 +1198,23 @@ It gives the project:
 
 For small to medium React apps, Vite is usually a strong default.
 
+## Supabase
+
+Supabase is the backend platform.
+
+In this app it handles:
+
+- Email magic-link sign-in.
+- Postgres database storage.
+- Row-level security.
+- Database migrations.
+- RPC functions for ride actions.
+- MFA-aware admin access.
+
+Supabase is helpful here because the app needs a real shared board, not just a single-user browser notebook.
+
+The important lesson is that Supabase is not just "where the data lives." It is also where security rules live. The database is responsible for enforcing who can see and change what.
+
 ## ESLint
 
 ESLint checks for code problems.
@@ -1033,13 +1233,14 @@ For front-end projects, Playwright is valuable because many bugs only appear in 
 
 ## CSS Grid
 
-CSS Grid is used for the dashboard layout.
+CSS Grid is used for the app layout.
 
-It is well suited to this app because the screen has clear regions:
+It is well suited to this app because several screens have clear regions:
 
-- Left form.
-- Center board.
-- Right matching panel.
+- Main board.
+- Side panel.
+- Filter controls.
+- Summary/status areas.
 
 Grid lets those regions resize and collapse cleanly.
 
@@ -1062,17 +1263,32 @@ src/main.jsx
   renders <App />
 
 src/App.jsx
-  defines data
+  defines sample data and UI state
   stores app state
   calculates matches
   renders components
-  writes updates to localStorage
+
+src/supabaseClient.js
+  creates the Supabase browser client
+
+src/supabaseData.js
+  translates between React-shaped data and database rows
+  fetches the board
+  saves participants and ride groups
+  calls ride action RPCs
+
+supabase/migrations/
+  defines tables, policies, functions, and constraints
 
 src/styles.css
   controls layout, colors, spacing, responsive behavior
 
 browser localStorage
-  keeps prototype data after refresh
+  keeps signed-out sample data after refresh
+
+Supabase
+  stores shared signed-in app data
+  enforces RLS and admin MFA rules
 ```
 
 And here is the user workflow:
@@ -1083,7 +1299,8 @@ attendee fills form
   -> user submits
   -> app creates participant
   -> app may create ride group
-  -> app saves to state and localStorage
+  -> signed-out mode saves to localStorage
+  -> signed-in mode saves to Supabase
   -> ride board re-renders
   -> match scores update
   -> stats update
@@ -1091,24 +1308,24 @@ attendee fills form
 
 ## What Would Come Next
 
-This prototype is a strong foundation, but it is not the final production system.
+This app is now a working React/Supabase foundation, but it is not the final production system.
 
 Good next steps:
 
-1. Move data to a shared backend.
-2. Add basic authentication or private edit links.
-3. Add host approval for commitments.
-4. Add timestamps and update reminders.
-5. Add data export for organizers.
-6. Add optional pickup coordinates or meeting points.
-7. Add real route/detour estimates.
-8. Add privacy controls for contact information.
-9. Add admin moderation.
-10. Add import from the original Google Sheet.
+1. Add host approval for commitments.
+2. Add timestamps and update reminders.
+3. Add organizer exports.
+4. Add optional pickup coordinates or meeting points.
+5. Add real route/detour estimates.
+6. Add privacy controls for contact information.
+7. Add dedicated admin moderation screens.
+8. Add import from the original Google Sheet.
+9. Configure custom SMTP if numeric OTP emails are required.
+10. Deploy with production redirect URLs.
 
-## Backend Options
+## Backend Options We Considered
 
-Several backend paths could work.
+Several backend paths could have worked. Supabase is the one currently implemented, but the comparison is still useful because it explains why.
 
 ## Google Sheets API
 
@@ -1143,7 +1360,7 @@ Cons:
 
 ## Supabase
 
-Best if the app is becoming a real product.
+Best if the app is becoming a real shared product. This is the current choice.
 
 Pros:
 
@@ -1172,15 +1389,27 @@ Cons:
 - More code to maintain.
 - More deployment complexity.
 
-For the next phase, Supabase or Airtable would probably be the most practical choices.
+For this project, Supabase won because it gives the app a real database, auth, and row-level security in one system.
 
-## Suggested Production Data Tables
+## Current Supabase Tables
 
-If this becomes a real shared app, the data might become tables like:
+The app now has real Supabase tables. The important ones are:
 
 ```text
+profiles
+  id
+  email
+  display_name
+  created_at
+  updated_at
+
+admin_users
+  user_id
+  created_at
+
 participants
   id
+  user_id
   name
   email
   phone
@@ -1192,15 +1421,12 @@ participants
   created_at
   updated_at
 
-availability
-  id
-  participant_id
-  slot_id
-  available
+participant_directory
+  public-safe participant fields for matching and display
 
 ride_groups
   id
-  host_id
+  host_participant_id
   type
   corridor
   route_flexibility
@@ -1210,23 +1436,25 @@ ride_groups
   created_at
   updated_at
 
-ride_group_members
-  id
+ride_memberships
   group_id
   participant_id
-  status
   created_at
 
-inquiries
-  id
+ride_inquiries
   group_id
   participant_id
-  message
-  status
   created_at
 ```
 
-That would make the system easier to query and audit.
+Availability is stored as JSON on participants and ride groups. That keeps the first version simple while still being structured enough for matching.
+
+The database also includes triggers and helper functions:
+
+- To keep `participant_directory` synced.
+- To calculate open spots.
+- To request or commit riders through controlled RPCs.
+- To enforce admin access only after MFA.
 
 ## The Most Important Product Lesson
 
@@ -1292,6 +1520,23 @@ Then run:
 npm run dev
 ```
 
+For signed-in shared mode, the app also needs:
+
+```bash
+VITE_SUPABASE_URL=https://jihvnicnexakeyyxeyad.supabase.co
+VITE_SUPABASE_ANON_KEY=your-public-anon-or-publishable-key
+```
+
+Those belong in `.env.local`, which should not be committed.
+
+Supabase migrations are applied from the same app directory:
+
+```bash
+supabase db push --dry-run
+supabase db push
+supabase migration list
+```
+
 ## How To Check The App
 
 Useful commands:
@@ -1299,6 +1544,7 @@ Useful commands:
 ```bash
 npm run lint
 npm run build
+supabase db advisors --linked --type security --level info
 ```
 
 Use `lint` to catch code quality problems.
@@ -1315,6 +1561,8 @@ For visual checks, open the app in a browser and inspect:
 - Capacity meters.
 - Inquiry and commit actions.
 - Status filtering.
+- Signed-out sample mode.
+- Signed-in Supabase mode, when credentials are available.
 
 Do not skip visual inspection. Front-end bugs often live in the space between "the code is valid" and "the screen is useful."
 
@@ -1338,15 +1586,25 @@ Do not skip visual inspection. Front-end bugs often live in the space between "t
 
 `effectiveStatus`: The status after accounting for capacity. If a group is full, it is full even if the stored status says otherwise.
 
-`localStorage`: Browser-only storage used for the prototype.
+`localStorage`: Browser-only storage used for signed-out sample mode.
+
+`Supabase`: The hosted backend for auth, database storage, migrations, row-level security, and RPCs.
+
+`magic link`: An email link that signs a user in without a password.
+
+`RLS`: Row-level security. Database rules that decide which rows a user can read or change.
+
+`MFA`: Multi-factor authentication. Admins must verify a TOTP authenticator code before receiving admin-level database access.
+
+`AAL2`: Supabase's session level showing that MFA has been verified.
 
 ## Final Takeaway
 
-This app is a practical first version of a real coordination tool.
+This app is a practical first version of a real coordination tool, now backed by Supabase for shared signed-in use.
 
 It turns a spreadsheet into something more useful by understanding the shape of the problem: people, routes, time slots, seats, capacity, inquiries, and commitments.
 
-The current version is intentionally modest. It does not try to solve everything. It solves the core matching and status problem clearly enough that the next technical decisions can be made with better information.
+The current version is intentionally modest. It does not try to solve everything. It solves the core matching, status, auth, and shared-data problem clearly enough that the next technical decisions can be made with better information.
 
 That is the rhythm of good software work:
 
@@ -1356,4 +1614,3 @@ That is the rhythm of good software work:
 4. Test it in the browser.
 5. Fix what reality shows you.
 6. Add complexity only when it earns its keep.
-

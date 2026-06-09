@@ -1,6 +1,6 @@
 # IRE Ride Connection App
 
-React/Vite prototype for coordinating conference rides to National Harbor, Maryland from DC, Virginia, and Maryland.
+React/Vite app for coordinating conference rides to National Harbor, Maryland from DC, Virginia, and Maryland. It supports signed-out sample mode for demos and Supabase-backed signed-in mode for shared data.
 
 ## Product Plan
 
@@ -13,6 +13,18 @@ Create a practical coordination board where IRE attendees can:
 - See potential matches that are realistic for the route to National Harbor.
 - Track whether a ride is still open, filling, pending, committed, or full.
 - Distinguish between tighter driver route constraints and more flexible rideshare split matches.
+
+### Current Version
+
+The app now includes:
+
+- Four tabs: `Find rides`, `Add info`, `Route map`, and `Status`.
+- Supabase Auth with email magic-link sign-in.
+- Supabase Postgres tables for participants, public-safe participant directory rows, ride groups, memberships, inquiries, profiles, and admin users.
+- Row-level security policies so regular users can manage their own profile while admins can troubleshoot after MFA.
+- Admin MFA step-up: admin accounts can be recognized before MFA, but admin-only data/actions require an AAL2 session.
+- A uniqueness rule that prevents duplicate ride groups when a participant updates their profile.
+- Signed-out sample data and local storage fallback for prototype/demo use.
 
 ### Core Data Model
 
@@ -52,13 +64,13 @@ The prototype scores each possible pairing using:
 
 The route model is intentionally approximate for the prototype. A production version should geocode submitted neighborhoods and evaluate actual pickup detour time with a maps API.
 
-### Recommended Build Phases
+### Recommended Next Phases
 
-1. Prototype: local state, sample records, manual add/list/match/status tools.
-2. Shared data: wire records to Google Sheets, Airtable, or Supabase with basic auth.
-3. Route intelligence: add geocoding and detour estimates for National Harbor routes.
-4. Coordination safety: add private contact reveal, moderation, expiration, and update reminders.
-5. Admin workflow: add organizer review tools, duplicate detection, and export.
+1. Route intelligence: add geocoding and detour estimates for National Harbor routes.
+2. Coordination safety: add private contact reveal, moderation, expiration, and update reminders.
+3. Admin workflow: add organizer review screens, exports, and duplicate/contact audit tools.
+4. Communication: add host approval flows and optional notifications.
+5. Deployment: connect the production URL, redirect settings, and any custom email provider.
 
 ## Run
 
@@ -89,8 +101,18 @@ VITE_SUPABASE_ANON_KEY=your-public-anon-or-publishable-key
 Apply database changes:
 
 ```bash
+supabase db push --dry-run
 supabase db push
+supabase migration list
 ```
+
+Security checks:
+
+```bash
+supabase db advisors --linked --type security --level info
+```
+
+The app intentionally exposes three authenticated RPCs: `get_my_role`, `request_join_ride`, and `commit_to_ride`. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
 
 Regular users sign in by email magic link. The app also keeps an optional code-entry field for a future OTP setup, but the current free-tier Supabase project uses the default email provider, which does not allow hosted email template edits.
 
@@ -112,3 +134,15 @@ values ('00000000-0000-0000-0000-000000000000');
 ```
 
 Admin users see the participant switcher and MFA setup panel. Regular signed-in users see only their own ride profile as the matching perspective.
+
+Admin role and MFA behavior:
+
+- `get_my_role()` returns whether the current account is listed in `public.admin_users`.
+- RLS admin access is stricter: admin-only policies call private helper functions that require both admin membership and an MFA-verified `aal2` session.
+- Returning admins can verify an existing authenticator code in the app.
+- First-time admins can enroll a TOTP factor from the app.
+
+Ride group duplicate prevention:
+
+- Each participant can host at most one carpool group and one rideshare group.
+- Updating a profile upserts the relevant hosted group instead of inserting another duplicate group.
