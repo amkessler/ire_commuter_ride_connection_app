@@ -936,7 +936,7 @@ Commit
 
 The simple branch later changed the user-facing final action again to "Mark matched," because that better reflects the new rule that people should talk first and only record the match afterward.
 
-It also changed "Inquire" into "I contacted them" or "I offered help." That is a more honest label when the app is not sending automated email.
+It also changed "Inquire" into "Record contact" or "Record help offer." That is a more honest label when the app is not sending automated email, and it makes clear that the button records something the user did outside the app.
 
 The meaning stayed clear, and the layout became cleaner.
 
