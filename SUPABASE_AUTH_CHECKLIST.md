@@ -4,17 +4,15 @@ Use this checklist before public testing.
 
 ## Email Sign-In
 
-The React app calls `signInWithOtp()`. In the current Supabase setup, that sends a magic sign-in link because the project is on the free tier with Supabase's default email provider. Numeric code emails require custom SMTP or a paid plan that allows hosted email template edits.
+The React app calls `signInWithOtp()`. The hosted Supabase email template is configured to send a numeric one-time code with `{{ .Token }}`.
 
 In the Supabase dashboard for `ire_commuter_rides`:
 
 1. Open `Authentication` -> `Emails`.
 2. Open the passwordless login/confirmation email template.
-3. Keep `{{ .ConfirmationURL }}` in the email body for magic-link sign-in.
+3. Confirm the template includes `{{ .Token }}`.
 4. Send a login email from the app.
-5. Confirm the received link opens the app and signs the user in.
-
-If the project later switches to numeric OTP emails, change the Magic Link / OTP template to include `{{ .Token }}` and confirm the received code works in the app's optional code field.
+5. Confirm the received code works in the app's `One-time code` field.
 
 ## Admin MFA
 

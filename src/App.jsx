@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarClock,
   Car,
@@ -460,6 +460,7 @@ function App() {
   const [appError, setAppError] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasAdminMfaAccess, setHasAdminMfaAccess] = useState(false);
+  const boardRequestId = useRef(0);
 
   const { participants, groups } = state;
   const hasAdminAccess = userRole === "admin" && hasAdminMfaAccess;
@@ -491,12 +492,15 @@ function App() {
   }, []);
 
   const loadRemoteBoard = useCallback(
-    async (activeSession = session) => {
+    async (activeSession) => {
       if (!activeSession || !supabase) return;
+      const requestId = boardRequestId.current + 1;
+      boardRequestId.current = requestId;
       setIsSyncing(true);
       setAppError("");
       try {
         const board = await fetchSupabaseBoard();
+        if (requestId !== boardRequestId.current) return;
         setState({
           participants: board.participants,
           groups: board.groups,
@@ -523,16 +527,18 @@ function App() {
       } catch (error) {
         setAppError(error.message || "Unable to load Supabase data.");
       } finally {
-        setIsSyncing(false);
+        if (requestId === boardRequestId.current) {
+          setIsSyncing(false);
+        }
       }
     },
-    [refreshAdminMfaAccess, session],
+    [refreshAdminMfaAccess],
   );
 
   const handleAdminMfaVerified = useCallback(async () => {
     await refreshAdminMfaAccess();
-    await loadRemoteBoard();
-  }, [loadRemoteBoard, refreshAdminMfaAccess]);
+    await loadRemoteBoard(session);
+  }, [loadRemoteBoard, refreshAdminMfaAccess, session]);
 
   useEffect(() => {
     if (!supabase) return undefined;
@@ -584,7 +590,7 @@ function App() {
       setAppError(error.message);
       return;
     }
-    setAuthMessage("Check your email for a secure sign-in link.");
+    setAuthMessage("Check your email for a one-time sign-in code.");
   }
 
   async function verifyLoginCode(event) {
@@ -617,7 +623,7 @@ function App() {
 
   function resetSamples() {
     if (session) {
-      loadRemoteBoard();
+      loadRemoteBoard(session);
       return;
     }
 
@@ -712,7 +718,7 @@ function App() {
         );
         setSelectedParticipantId(savedParticipant.id);
         setForm(blankForm);
-        await loadRemoteBoard();
+        await loadRemoteBoard(session);
       } catch (error) {
         setAppError(error.message || "Unable to save your ride info.");
       } finally {
@@ -735,7 +741,7 @@ function App() {
       setAppError("");
       try {
         await saveGroupStatus(groupId, patch.status);
-        await loadRemoteBoard();
+        await loadRemoteBoard(session);
       } catch (error) {
         setAppError(error.message || "Unable to update ride status.");
       } finally {
@@ -767,7 +773,7 @@ function App() {
       setAppError("");
       try {
         await requestJoinRide(groupId, selectedParticipant.id);
-        await loadRemoteBoard();
+        await loadRemoteBoard(session);
       } catch (error) {
         setAppError(error.message || "Unable to mark inquiry.");
       } finally {
@@ -794,7 +800,7 @@ function App() {
       setAppError("");
       try {
         await commitToRide(groupId, selectedParticipant.id);
-        await loadRemoteBoard();
+        await loadRemoteBoard(session);
       } catch (error) {
         setAppError(error.message || "Unable to commit rider.");
       } finally {
@@ -1124,7 +1130,7 @@ function AuthPanel({
     <section className="auth-panel">
       <div>
         <strong>Sign in to save your ride profile</strong>
-        <span>Use your email to get a secure sign-in link. The sample board remains visible while signed out.</span>
+        <span>Use your email to get a one-time sign-in code. The sample board remains visible while signed out.</span>
       </div>
       <form className="auth-form" onSubmit={onSendCode}>
         <label className="field">
@@ -1138,17 +1144,17 @@ function AuthPanel({
           />
         </label>
         <button className="primary-button" type="submit">
-          Send sign-in link
+          Send code
         </button>
       </form>
       <form className="auth-form" onSubmit={onVerifyCode}>
         <label className="field">
-          <span>One-time code, if provided</span>
+          <span>One-time code</span>
           <input
             inputMode="numeric"
             value={authCode}
             onChange={(event) => setAuthCode(event.target.value)}
-            placeholder="Optional code"
+            placeholder="123456"
           />
         </label>
         <button className="secondary-button" disabled={!authCode} type="submit">

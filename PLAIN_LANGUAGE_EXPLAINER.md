@@ -466,7 +466,7 @@ When a user signs in, the app switches to Supabase.
 
 Supabase provides:
 
-- Email magic-link authentication.
+- Email one-time code authentication.
 - A shared Postgres database.
 - Row-level security policies.
 - Remote participant and ride group storage.
@@ -815,21 +815,21 @@ The tradeoff:
 
 Lesson: local storage is a useful sketchpad. Supabase is the shared filing cabinet.
 
-## Decision: Use Magic Links For Sign-In
+## Decision: Use Email Codes For Sign-In
 
 The app uses Supabase email sign-in.
 
-We originally planned around one-time numeric codes. When tested against the hosted Supabase project, the email sent a sign-in link instead. That was not a React bug. It was Supabase behavior: on the free tier with the default email provider, hosted email template edits are not available, so we could not switch the email body to use `{{ .Token }}`.
+We originally planned around one-time numeric codes. The first live test sent a sign-in link instead because the hosted Supabase template was still link-based.
 
-The pragmatic fix was to make magic links the expected user flow and keep the code field as optional future support.
+After the Supabase account was upgraded, we updated the hosted template through the Management API so the email body uses `{{ .Token }}`. The app now expects the user to copy the code from email into the `One-time code` field.
 
 Why this was good:
 
-- It matched what Supabase could actually send in this project.
-- Users no longer expect a code that will not arrive.
-- The app can still support OTP later if the project adds custom SMTP or a plan that permits template edits.
+- It gives users a clear code-entry flow.
+- It keeps sign-in passwordless.
+- It avoids requiring users to leave the browser flow through a magic link.
 
-Lesson: good engineering means aligning the UI with the real behavior of the platform, not the behavior we hoped it would have.
+Lesson: good engineering means testing the provider behavior end to end, then making the UI and configuration match.
 
 ## Decision: Require MFA For Admin Privileges
 
@@ -970,19 +970,33 @@ test-results
 
 Lesson: every project should draw a line between source files and generated files. Otherwise the repository becomes noisy quickly.
 
-## Issue 7: Supabase Sent A Link Instead Of A Numeric Code
+## Issue 7: Supabase Initially Sent A Link Instead Of A Numeric Code
 
 The app called Supabase's `signInWithOtp()`, and the UI originally told users to expect a one-time code.
 
 During real testing, Supabase sent a magic sign-in link.
 
-That was confusing but not mysterious. Supabase can support token-based emails, but hosted email template edits are not available for this free-tier project while using the default email provider. When we tried to patch the email template through the Management API, Supabase rejected the change with a clear message: custom email template modification requires a different plan or custom SMTP.
+That was confusing but not mysterious. Supabase can support token-based emails, but the hosted email template was still using the confirmation URL placeholder. When we first tried to patch the email template through the Management API, Supabase rejected the change because the project was still on a plan that did not allow hosted template edits with the default email provider.
 
-The fix was to change the app copy:
+The temporary fix was to change the app copy to match magic links. After the Supabase account was upgraded, we retried the Management API patch and it succeeded.
 
-- Primary action: "Send sign-in link."
-- Message: "Check your email for a secure sign-in link."
-- Code field: "One-time code, if provided."
+The final template now uses:
+
+```text
+{{ .Token }}
+```
+
+and no longer depends on:
+
+```text
+{{ .ConfirmationURL }}
+```
+
+The app copy was then changed back to code-first language:
+
+- Primary action: "Send code."
+- Message: "Check your email for a one-time sign-in code."
+- Code field: "One-time code."
 
 Lesson: always test auth emails end to end. Authentication is where product copy, provider settings, pricing limits, and user expectations collide.
 
@@ -1204,7 +1218,7 @@ Supabase is the backend platform.
 
 In this app it handles:
 
-- Email magic-link sign-in.
+- Email one-time code sign-in.
 - Postgres database storage.
 - Row-level security.
 - Database migrations.
@@ -1320,7 +1334,7 @@ Good next steps:
 6. Add privacy controls for contact information.
 7. Add dedicated admin moderation screens.
 8. Add import from the original Google Sheet.
-9. Configure custom SMTP if numeric OTP emails are required.
+9. Keep the hosted email template under source-control notes/checklists so future changes do not accidentally remove `{{ .Token }}`.
 10. Deploy with production redirect URLs.
 
 ## Backend Options We Considered
@@ -1590,7 +1604,7 @@ Do not skip visual inspection. Front-end bugs often live in the space between "t
 
 `Supabase`: The hosted backend for auth, database storage, migrations, row-level security, and RPCs.
 
-`magic link`: An email link that signs a user in without a password.
+`one-time code`: A short-lived email code that signs a user in without a password.
 
 `RLS`: Row-level security. Database rules that decide which rows a user can read or change.
 

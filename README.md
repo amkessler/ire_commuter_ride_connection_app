@@ -19,7 +19,7 @@ Create a practical coordination board where IRE attendees can:
 The app now includes:
 
 - Four tabs: `Find rides`, `Add info`, `Route map`, and `Status`.
-- Supabase Auth with email magic-link sign-in.
+- Supabase Auth with email one-time code sign-in.
 - Supabase Postgres tables for participants, public-safe participant directory rows, ride groups, memberships, inquiries, profiles, and admin users.
 - Row-level security policies so regular users can manage their own profile while admins can troubleshoot after MFA.
 - Admin MFA step-up: admin accounts can be recognized before MFA, but admin-only data/actions require an AAL2 session.
@@ -114,17 +114,15 @@ supabase db advisors --linked --type security --level info
 
 The app intentionally exposes three authenticated RPCs: `get_my_role`, `request_join_ride`, and `commit_to_ride`. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
 
-Regular users sign in by email magic link. The app also keeps an optional code-entry field for a future OTP setup, but the current free-tier Supabase project uses the default email provider, which does not allow hosted email template edits.
+Regular users sign in by email one-time code. The hosted Supabase email template has been updated through the Management API to send `{{ .Token }}` instead of a magic sign-in link.
 
-Magic-link checklist:
+Email code checklist:
 
 1. Open Supabase dashboard for `ire_commuter_rides`.
 2. Go to `Authentication` -> `Emails`.
 3. Open the confirmation/login email template used by passwordless email sign-in.
-4. Keep `{{ .ConfirmationURL }}` in the email body for the magic-link flow.
-5. Send a test login email and verify the sign-in link opens the app.
-
-To use numeric one-time codes later, configure custom SMTP or move the Supabase project to a plan that permits hosted email template edits, then change the Magic Link / OTP template to include `{{ .Token }}`.
+4. Confirm the Magic Link / OTP template includes `{{ .Token }}` and does not rely on `{{ .ConfirmationURL }}`.
+5. Send a test login email and verify the received code works in the app's `One-time code` field.
 
 Admins are controlled by `public.admin_users`. Add an admin by inserting that user's auth UUID:
 
