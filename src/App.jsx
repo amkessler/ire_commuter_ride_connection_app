@@ -310,6 +310,18 @@ const sampleGroups = [
     status: "open",
     availability: makeAvailability(["thuAm", "thuPm", "friAm", "sunAm"]),
   },
+  {
+    id: "g6",
+    hostId: "p5",
+    type: "carpool-request",
+    corridor: "pg-county",
+    routeFlexibility: "moderate",
+    capacity: 1,
+    riderIds: [],
+    inquiries: [],
+    status: "open",
+    availability: makeAvailability(["friAm", "friPm", "satAm"]),
+  },
 ];
 
 const blankForm = {
@@ -382,7 +394,9 @@ function participantToForm(participant) {
 function ridePlanFromForm(formState) {
   if (formState.intent === "offer") return "offer-carpool";
   if (formState.intent === "split-rideshare") return "split-rideshare";
-  if (formState.intent === "both") return "open";
+  if (formState.intent === "both") {
+    return Number(formState.seatsAvailable) > 0 ? "open-offer" : "open-seek";
+  }
   return "need-carpool";
 }
 
@@ -400,7 +414,13 @@ function formFieldsFromRidePlan(ridePlan, currentForm) {
     nextForm.seatsNeeded = 0;
     nextForm.seatsAvailable = 0;
     nextForm.maxPartySize = Number(nextForm.maxPartySize) > 0 ? nextForm.maxPartySize : 2;
-  } else if (ridePlan === "open") {
+  } else if (ridePlan === "open-offer") {
+    nextForm.intent = "both";
+    nextForm.transportPreference = "either";
+    nextForm.seatsNeeded = 0;
+    nextForm.seatsAvailable = Number(nextForm.seatsAvailable) > 0 ? nextForm.seatsAvailable : 1;
+    nextForm.maxPartySize = Number(nextForm.maxPartySize) > 0 ? nextForm.maxPartySize : 2;
+  } else if (ridePlan === "open-seek") {
     nextForm.intent = "both";
     nextForm.transportPreference = "either";
     nextForm.seatsNeeded = Number(nextForm.seatsNeeded) > 0 ? nextForm.seatsNeeded : 1;
@@ -419,16 +439,17 @@ function formFieldsFromRidePlan(ridePlan, currentForm) {
 
 function normalizeRideModeFields(formState) {
   const ridePlan = ridePlanFromForm(formState);
-  const needsCarpoolSeat = ridePlan === "need-carpool" || ridePlan === "open";
-  const offersCarpool = ridePlan === "offer-carpool";
-  const splitsRideshare = ridePlan === "split-rideshare" || ridePlan === "open";
+  const isOpenPlan = ridePlan === "open-offer" || ridePlan === "open-seek";
+  const needsCarpoolSeat = ridePlan === "need-carpool" || ridePlan === "open-seek";
+  const offersCarpool = ridePlan === "offer-carpool" || ridePlan === "open-offer";
+  const splitsRideshare = ridePlan === "split-rideshare" || isOpenPlan;
 
   return {
     ...formState,
     seatsNeeded: needsCarpoolSeat ? formState.seatsNeeded : 0,
     seatsAvailable: offersCarpool ? formState.seatsAvailable : 0,
-    maxPartySize: splitsRideshare || ridePlan === "open" ? formState.maxPartySize : 0,
-    transportPreference: ridePlan === "open" ? "either" : needsCarpoolSeat ? "carpool" : formState.transportPreference,
+    maxPartySize: splitsRideshare ? formState.maxPartySize : 0,
+    transportPreference: isOpenPlan ? "either" : needsCarpoolSeat ? "carpool" : formState.transportPreference,
   };
 }
 
@@ -459,25 +480,97 @@ function routeFitLabel(personCorridor, groupCorridor, groupType) {
   return { label: "Likely detour", level: "weak" };
 }
 
+function pluralize(count, singular, plural = `${singular}s`) {
+  return count === 1 ? singular : plural;
+}
+
+function getGroupTypeMeta(type) {
+  if (type === "carpool") {
+    return {
+      Icon: Car,
+      title: "Driver carpool",
+      contactName: "Driver",
+      committedLabel: "Committed riders:",
+      emptyCommitted: "No riders committed yet",
+      inquiriesLabel: "Inquiries:",
+      emptyInquiries: "No open inquiries",
+      inquireLabel: "Inquire",
+      inquiredLabel: "Inquiry sent",
+      commitLabel: "Commit",
+      committedButtonLabel: "Committed",
+      statusLabel: "Ride status",
+    };
+  }
+
+  if (type === "carpool-request") {
+    return {
+      Icon: UserPlus,
+      title: "Carpool request",
+      contactName: "Requester",
+      committedLabel: "Matched offers:",
+      emptyCommitted: "No matched offers yet",
+      inquiriesLabel: "Offers to help:",
+      emptyInquiries: "No offers yet",
+      inquireLabel: "Offer help",
+      inquiredLabel: "Offer sent",
+      commitLabel: "Mark matched",
+      committedButtonLabel: "Matched",
+      statusLabel: "Request status",
+    };
+  }
+
+  return {
+    Icon: Users,
+    title: "Uber/Lyft split",
+    contactName: "Organizer",
+    committedLabel: "Committed:",
+    emptyCommitted: "No riders committed yet",
+    inquiriesLabel: "Inquiries:",
+    emptyInquiries: "No open inquiries",
+    inquireLabel: "Inquire",
+    inquiredLabel: "Inquiry sent",
+    commitLabel: "Commit",
+    committedButtonLabel: "Committed",
+    statusLabel: "Ride status",
+  };
+}
+
 function getGroupCounts(group) {
   if (group.type === "carpool") {
     const committed = group.riderIds.length;
+    const openSpots = Math.max(group.capacity - committed, 0);
     return {
       committed,
-      openSpots: Math.max(group.capacity - committed, 0),
+      openSpots,
       used: committed,
       total: group.capacity,
       label: `${committed}/${group.capacity} carpool seats committed`,
+      openLabel: `${openSpots} open`,
+    };
+  }
+
+  if (group.type === "carpool-request") {
+    const matchedOffers = group.riderIds.length;
+    const stillNeeded = Math.max(group.capacity - matchedOffers, 0);
+    return {
+      committed: matchedOffers,
+      openSpots: stillNeeded,
+      used: matchedOffers,
+      total: group.capacity,
+      label: `${group.capacity} carpool ${pluralize(group.capacity, "seat")} needed`,
+      openLabel: `${stillNeeded} still needed`,
     };
   }
 
   const committed = group.riderIds.length + 1;
+  const openSpots = Math.max(group.capacity - committed, 0);
   return {
     committed,
-    openSpots: Math.max(group.capacity - committed, 0),
+    openSpots,
     used: committed,
     total: group.capacity,
     label: `${committed}/${group.capacity} riders in pool`,
+    openLabel: `${openSpots} open`,
   };
 }
 
@@ -491,25 +584,32 @@ function scoreGroupForParticipant(group, participant) {
   const sharedSlots = overlapSlots(group.availability, participant.availability);
   const routeFit = routeFitLabel(participant.corridor, group.corridor, group.type);
   const status = effectiveStatus(group);
-  const wantsCarpool =
+  const wantsCarpoolSeat =
     participant.intent === "need-seat" ||
-    participant.intent === "both" ||
-    participant.transportPreference === "carpool" ||
-    participant.transportPreference === "either";
+    (participant.intent === "both" && participant.seatsNeeded > 0) ||
+    ((participant.transportPreference === "carpool" || participant.transportPreference === "either") &&
+      participant.seatsNeeded > 0);
   const wantsRideshare =
     participant.intent === "split-rideshare" ||
     participant.intent === "both" ||
     participant.transportPreference === "rideshare" ||
     participant.transportPreference === "either";
+  const offersCarpool =
+    (participant.intent === "offer" || participant.intent === "both") &&
+    participant.transportPreference !== "rideshare" &&
+    participant.seatsAvailable > 0;
 
   let score = sharedSlots.length * 12;
   if (routeFit.level === "strong") score += 38;
   if (routeFit.level === "good") score += 22;
   if (routeFit.level === "possible") score += 8;
   if (routeFit.level === "weak") score -= 20;
-  if (group.type === "carpool" && wantsCarpool) score += 14;
+  if (group.type === "carpool" && wantsCarpoolSeat) score += 14;
+  if (group.type === "carpool-request" && offersCarpool) score += 18;
+  if (group.type === "carpool-request" && wantsCarpoolSeat) score -= 10;
   if (group.type === "rideshare" && wantsRideshare) score += 14;
-  if (group.type === "carpool" && !wantsCarpool) score -= 24;
+  if (group.type === "carpool" && !wantsCarpoolSeat) score -= 24;
+  if (group.type === "carpool-request" && !offersCarpool && !wantsCarpoolSeat) score -= 16;
   if (group.type === "rideshare" && !wantsRideshare) score -= 12;
   if (status === "open") score += 12;
   if (status === "pending") score += 4;
@@ -769,6 +869,10 @@ function App() {
       (participant.intent === "offer" || participant.intent === "both") &&
       participant.transportPreference !== "rideshare" &&
       participant.seatsAvailable > 0;
+    const requestsCarpool =
+      (participant.intent === "need-seat" || participant.intent === "both") &&
+      participant.transportPreference !== "rideshare" &&
+      participant.seatsNeeded > 0;
     const startsRideshare =
       participant.intent === "split-rideshare" ||
       (participant.intent === "both" && participant.transportPreference !== "carpool");
@@ -788,6 +892,23 @@ function App() {
       };
       nextGroups.push(carpoolGroup);
       groupsToCreate.push(carpoolGroup);
+    }
+
+    if (requestsCarpool) {
+      const carpoolRequestGroup = {
+        id: `g${Date.now()}q`,
+        hostId: participantId,
+        type: "carpool-request",
+        corridor: participant.corridor,
+        routeFlexibility: "moderate",
+        capacity: participant.seatsNeeded,
+        riderIds: [],
+        inquiries: [],
+        status: "open",
+        availability: participant.availability,
+      };
+      nextGroups.push(carpoolRequestGroup);
+      groupsToCreate.push(carpoolRequestGroup);
     }
 
     if (startsRideshare) {
@@ -964,9 +1085,15 @@ function App() {
 
   const activeStats = useMemo(() => {
     const openGroups = groups.filter((group) => effectiveStatus(group) !== "full");
-    const openSeats = groups.reduce((total, group) => total + getGroupCounts(group).openSpots, 0);
+    const openSeats = groups.reduce((total, group) => {
+      if (group.type === "carpool-request") return total;
+      return total + getGroupCounts(group).openSpots;
+    }, 0);
     const seekers = participants.filter(
-      (participant) => participant.intent === "need-seat" || participant.intent === "split-rideshare",
+      (participant) =>
+        participant.intent === "need-seat" ||
+        participant.intent === "split-rideshare" ||
+        participant.intent === "both",
     );
     return {
       participants: participants.length,
@@ -1033,7 +1160,7 @@ function App() {
             <div className="board-header">
               <div>
                 <p className="eyebrow">Route alignment</p>
-                <h2>Open rides and shared ride pools</h2>
+                <h2>Open rides, requests, and shared ride pools</h2>
               </div>
               <BoardControls
                 corridorFilter={corridorFilter}
@@ -1613,8 +1740,10 @@ function EntryForm({
   submitLabel,
 }) {
   const ridePlan = ridePlanFromForm(form);
-  const carpoolSeatsNeededDisabled = ridePlan === "offer-carpool" || ridePlan === "split-rideshare";
-  const carpoolSeatsOfferedDisabled = ridePlan === "need-carpool" || ridePlan === "split-rideshare" || ridePlan === "open";
+  const carpoolSeatsNeededDisabled =
+    ridePlan === "offer-carpool" || ridePlan === "split-rideshare" || ridePlan === "open-offer";
+  const carpoolSeatsOfferedDisabled =
+    ridePlan === "need-carpool" || ridePlan === "split-rideshare" || ridePlan === "open-seek";
   const rideshareCapDisabled = ridePlan === "need-carpool" || ridePlan === "offer-carpool";
 
   return (
@@ -1677,7 +1806,8 @@ function EntryForm({
           <option value="need-carpool">I need a carpool seat</option>
           <option value="offer-carpool">I can offer carpool seats</option>
           <option value="split-rideshare">I want to split an Uber/Lyft</option>
-          <option value="open">I am open to either carpool or Uber/Lyft</option>
+          <option value="open-offer">I am open to either offering carpool seats or splitting Uber/Lyft</option>
+          <option value="open-seek">I am open to either seeking a carpool seat or splitting Uber/Lyft</option>
         </select>
       </label>
 
@@ -1811,6 +1941,8 @@ function RideCard({
   const corridor = getCorridor(group.corridor);
   const counts = getGroupCounts(group);
   const status = effectiveStatus(group);
+  const groupMeta = getGroupTypeMeta(group.type);
+  const GroupIcon = groupMeta.Icon;
   const alreadyRiding = selectedParticipant && group.riderIds.includes(selectedParticipant.id);
   const alreadyInquired = selectedParticipant && group.inquiries.includes(selectedParticipant.id);
   const isHost = selectedParticipant && selectedParticipant.id === group.hostId;
@@ -1820,9 +1952,9 @@ function RideCard({
     <article className={`ride-card status-${status}`}>
       <div className="ride-card-header">
         <div className="ride-type">
-          {group.type === "carpool" ? <Car size={18} aria-hidden="true" /> : <Users size={18} aria-hidden="true" />}
+          <GroupIcon size={18} aria-hidden="true" />
           <div>
-            <h3>{group.type === "carpool" ? "Driver carpool" : "Uber/Lyft split"}</h3>
+            <h3>{groupMeta.title}</h3>
             <p>{corridor.label}</p>
           </div>
         </div>
@@ -1851,7 +1983,7 @@ function RideCard({
       <div className="capacity-meter" aria-label={counts.label}>
         <div>
           <strong>{counts.label}</strong>
-          <span>{counts.openSpots} open</span>
+          <span>{counts.openLabel}</span>
         </div>
         <div className="meter-track">
           <span style={{ width: `${Math.min((counts.used / counts.total) * 100, 100)}%` }} />
@@ -1859,6 +1991,7 @@ function RideCard({
       </div>
 
       <div className="host-block">
+        <span className="host-role">{groupMeta.contactName}</span>
         <strong>{host?.name || "Unknown host"}</strong>
         <span>{host?.notes}</span>
         <div className="contact-row">
@@ -1879,27 +2012,27 @@ function RideCard({
       </div>
 
       <div className="people-line">
-        <strong>Committed:</strong>
-        <span>{riders.length ? riders.map((rider) => rider.name).join(", ") : "No riders committed yet"}</span>
+        <strong>{groupMeta.committedLabel}</strong>
+        <span>{riders.length ? riders.map((rider) => rider.name).join(", ") : groupMeta.emptyCommitted}</span>
       </div>
       <div className="people-line">
-        <strong>Inquiries:</strong>
-        <span>{inquiries.length ? inquiries.map((rider) => rider.name).join(", ") : "No open inquiries"}</span>
+        <strong>{groupMeta.inquiriesLabel}</strong>
+        <span>{inquiries.length ? inquiries.map((rider) => rider.name).join(", ") : groupMeta.emptyInquiries}</span>
       </div>
 
       <div className="card-actions">
         <button className="secondary-button" type="button" disabled={!canAct || alreadyInquired} onClick={() => onInquire(group.id)}>
           <CircleAlert size={15} aria-hidden="true" />
-          {alreadyInquired ? "Inquiry sent" : "Inquire"}
+          {alreadyInquired ? groupMeta.inquiredLabel : groupMeta.inquireLabel}
         </button>
         <button className="primary-button small" type="button" disabled={!canAct} onClick={() => onCommit(group.id)}>
           <CheckCircle2 size={15} aria-hidden="true" />
-          {alreadyRiding ? "Committed" : "Commit"}
+          {alreadyRiding ? groupMeta.committedButtonLabel : groupMeta.commitLabel}
         </button>
         <select
           value={status}
           onChange={(event) => onStatusChange(event.target.value)}
-          aria-label="Ride status"
+          aria-label={groupMeta.statusLabel}
           disabled={!canManageStatus}
         >
           <option value="open">Open</option>

@@ -861,6 +861,14 @@ button:focus-visible {
   gap: 7px;
 }
 
+.host-role {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .contact-row {
   gap: 8px;
 }
