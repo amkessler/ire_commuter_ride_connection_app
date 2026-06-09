@@ -1682,17 +1682,6 @@ function EntryForm({
 
       <div className="field-grid">
         <label className="field">
-          <span>Carpool seats needed</span>
-          <input
-            disabled={carpoolSeatsNeededDisabled}
-            min="0"
-            max="6"
-            type="number"
-            value={carpoolSeatsNeededDisabled ? 0 : form.seatsNeeded}
-            onChange={(event) => onFieldChange("seatsNeeded", event.target.value)}
-          />
-        </label>
-        <label className="field">
           <span>Carpool seats offered</span>
           <input
             disabled={carpoolSeatsOfferedDisabled}
@@ -1701,6 +1690,17 @@ function EntryForm({
             type="number"
             value={carpoolSeatsOfferedDisabled ? 0 : form.seatsAvailable}
             onChange={(event) => onFieldChange("seatsAvailable", event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>Carpool seats needed</span>
+          <input
+            disabled={carpoolSeatsNeededDisabled}
+            min="0"
+            max="6"
+            type="number"
+            value={carpoolSeatsNeededDisabled ? 0 : form.seatsNeeded}
+            onChange={(event) => onFieldChange("seatsNeeded", event.target.value)}
           />
         </label>
         <label className="field">
