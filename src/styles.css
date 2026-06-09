@@ -1354,6 +1354,41 @@ button:focus-visible {
   width: 100%;
 }
 
+.action-status,
+.action-note {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  line-height: 1.2;
+}
+
+.action-status {
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #d8e1dc;
+  background: #f4f7f3;
+  color: var(--muted);
+  font-weight: 900;
+  text-align: center;
+}
+
+.action-status.is-matched {
+  color: var(--green);
+}
+
+.action-note {
+  justify-content: flex-start;
+  margin: 0;
+  border: 1px solid #ede6d8;
+  background: #fbfaf5;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: left;
+}
+
 @media (max-width: 980px) {
   .simple-hero {
     align-items: stretch;

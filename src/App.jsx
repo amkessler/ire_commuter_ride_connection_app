@@ -488,7 +488,7 @@ function getGroupTypeMeta(type) {
       emptyCommitted: "No riders committed yet",
       inquiriesLabel: "Contacted by:",
       emptyInquiries: "No contact noted",
-      inquireLabel: "Mark contacted",
+      inquireLabel: "I contacted them",
       inquiredLabel: "Contact noted",
       commitLabel: "Driver confirms",
       committedButtonLabel: "Matched",
@@ -505,7 +505,7 @@ function getGroupTypeMeta(type) {
       emptyCommitted: "No matched offers yet",
       inquiriesLabel: "Help offered by:",
       emptyInquiries: "No help offers noted",
-      inquireLabel: "Mark help offered",
+      inquireLabel: "I offered help",
       inquiredLabel: "Help offer noted",
       commitLabel: "Mark matched",
       committedButtonLabel: "Matched",
@@ -521,7 +521,7 @@ function getGroupTypeMeta(type) {
     emptyCommitted: "No riders committed yet",
     inquiriesLabel: "Contacted by:",
     emptyInquiries: "No contact noted",
-    inquireLabel: "Mark contacted",
+    inquireLabel: "I contacted them",
     inquiredLabel: "Contact noted",
     commitLabel: "Mark matched",
     committedButtonLabel: "Matched",
@@ -1830,13 +1830,34 @@ function RideCard({
     status !== "full" &&
     group.type !== "carpool-request" &&
     inquiries.length > 0;
-  const matchButtonText = alreadyRiding
+  const contactStatusText = alreadyRiding
     ? groupMeta.committedButtonLabel
-    : alreadyInquired && group.type === "carpool"
-      ? "Driver confirms"
-      : alreadyInquired
-        ? groupMeta.commitLabel
-        : "Contact first";
+    : alreadyInquired
+      ? groupMeta.inquiredLabel
+      : isHost
+        ? "Your post"
+        : status === "full"
+          ? "Full"
+          : "Not a fit";
+  const actionGuidance = alreadyRiding
+    ? "This match is recorded."
+    : canSelfMarkMatch
+      ? "Record the match after everyone agrees."
+      : alreadyInquired && group.type === "carpool"
+        ? "Contact noted. The driver can mark the match."
+        : alreadyInquired
+          ? "Contact noted. Mark matched after agreement."
+          : canInquire && group.type === "carpool-request"
+            ? "Use Email or Phone to offer help, then note it here."
+            : canInquire
+              ? "Use Email or Phone first, then note that contact happened."
+              : isHost && hostCanMarkInquiries
+                ? "Review contacted people above and mark matched after agreement."
+                : isHost
+                  ? "This is your post."
+                  : status === "full"
+                    ? "This post is full."
+                    : "This does not match your current ride plan.";
 
   return (
     <article className={`ride-card status-${status}`}>
@@ -1922,14 +1943,25 @@ function RideCard({
       )}
 
       <div className="card-actions">
-        <button className="secondary-button" type="button" disabled={!canInquire} onClick={() => onInquire(group.id)}>
-          <CircleAlert size={15} aria-hidden="true" />
-          {alreadyInquired ? groupMeta.inquiredLabel : groupMeta.inquireLabel}
-        </button>
-        <button className="primary-button small" type="button" disabled={!canSelfMarkMatch} onClick={() => onCommit(group.id)}>
-          <CheckCircle2 size={15} aria-hidden="true" />
-          {matchButtonText}
-        </button>
+        {canInquire ? (
+          <button className="secondary-button" type="button" onClick={() => onInquire(group.id)}>
+            <CircleAlert size={15} aria-hidden="true" />
+            {groupMeta.inquireLabel}
+          </button>
+        ) : (
+          <span className={`action-status${alreadyRiding ? " is-matched" : ""}`}>
+            {(alreadyRiding || alreadyInquired) && <CheckCircle2 size={15} aria-hidden="true" />}
+            {contactStatusText}
+          </span>
+        )}
+        {canSelfMarkMatch ? (
+          <button className="primary-button small" type="button" onClick={() => onCommit(group.id)}>
+            <CheckCircle2 size={15} aria-hidden="true" />
+            {groupMeta.commitLabel}
+          </button>
+        ) : (
+          <p className="action-note">{actionGuidance}</p>
+        )}
         <select
           value={status}
           onChange={(event) => onStatusChange(event.target.value)}
