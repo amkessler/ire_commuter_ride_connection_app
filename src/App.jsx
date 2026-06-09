@@ -459,17 +459,36 @@ function App() {
   const [authMessage, setAuthMessage] = useState("");
   const [appError, setAppError] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
+  const [hasAdminMfaAccess, setHasAdminMfaAccess] = useState(false);
 
   const { participants, groups } = state;
+  const hasAdminAccess = userRole === "admin" && hasAdminMfaAccess;
   const ownParticipant = session
     ? participants.find((participant) => participant.userId === session.user.id)
     : null;
   const selectedParticipant =
-    (session && userRole !== "admin"
+    (session && !hasAdminAccess
       ? ownParticipant
       : participants.find((participant) => participant.id === selectedParticipantId)) ||
     ownParticipant ||
     participants[0];
+
+  const refreshAdminMfaAccess = useCallback(async () => {
+    if (!supabase) {
+      setHasAdminMfaAccess(false);
+      return false;
+    }
+
+    const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (error) {
+      setHasAdminMfaAccess(false);
+      return false;
+    }
+
+    const isVerified = data?.currentLevel === "aal2";
+    setHasAdminMfaAccess(isVerified);
+    return isVerified;
+  }, []);
 
   const loadRemoteBoard = useCallback(
     async (activeSession = session) => {
@@ -483,6 +502,11 @@ function App() {
           groups: board.groups,
         });
         setUserRole(board.role);
+        if (board.role === "admin") {
+          await refreshAdminMfaAccess();
+        } else {
+          setHasAdminMfaAccess(false);
+        }
 
         const currentOwnParticipant = board.participants.find(
           (participant) => participant.userId === activeSession.user.id,
@@ -502,8 +526,13 @@ function App() {
         setIsSyncing(false);
       }
     },
-    [session],
+    [refreshAdminMfaAccess, session],
   );
+
+  const handleAdminMfaVerified = useCallback(async () => {
+    await refreshAdminMfaAccess();
+    await loadRemoteBoard();
+  }, [loadRemoteBoard, refreshAdminMfaAccess]);
 
   useEffect(() => {
     if (!supabase) return undefined;
@@ -527,6 +556,7 @@ function App() {
         loadRemoteBoard(nextSession);
       } else {
         setUserRole("user");
+        setHasAdminMfaAccess(false);
         setState(loadInitialState());
         setSelectedParticipantId("p2");
       }
@@ -866,6 +896,8 @@ function App() {
         session={session}
         setAuthCode={setAuthCode}
         setAuthEmail={setAuthEmail}
+        hasAdminMfaAccess={hasAdminMfaAccess}
+        onAdminMfaVerified={handleAdminMfaVerified}
         userRole={userRole}
       />
 
@@ -916,7 +948,7 @@ function App() {
                   onInquire={inquire}
                   onCommit={commit}
                   onStatusChange={(status) => updateGroup(group.id, { status })}
-                  canManageStatus={!session || userRole === "admin" || group.hostId === ownParticipant?.id}
+                  canManageStatus={!session || hasAdminAccess || group.hostId === ownParticipant?.id}
                 />
               ))}
             </div>
@@ -929,7 +961,7 @@ function App() {
             selectedMatches={selectedMatches}
             selectedParticipant={selectedParticipant}
             setSelectedParticipantId={setSelectedParticipantId}
-            userRole={userRole}
+            canUseAdminTools={hasAdminAccess}
           />
         </main>
       )}
@@ -1010,7 +1042,7 @@ function App() {
                     onInquire={inquire}
                     onCommit={commit}
                     onStatusChange={(status) => updateGroup(group.id, { status })}
-                    canManageStatus={!session || userRole === "admin" || group.hostId === ownParticipant?.id}
+                    canManageStatus={!session || hasAdminAccess || group.hostId === ownParticipant?.id}
                   />
                 ))}
             </div>
@@ -1040,8 +1072,10 @@ function AuthPanel({
   authCode,
   authEmail,
   authMessage,
+  hasAdminMfaAccess,
   hasSupabaseConfig,
   isSyncing,
+  onAdminMfaVerified,
   onSendCode,
   onSignOut,
   onVerifyCode,
@@ -1068,10 +1102,16 @@ function AuthPanel({
           <strong>{session.user.email}</strong>
           <span>
             Signed in with Supabase. Role: <b>{userRole}</b>
+            {userRole === "admin" ? ` · MFA ${hasAdminMfaAccess ? "verified" : "needed"}` : ""}
             {isSyncing ? " · syncing..." : ""}
           </span>
         </div>
-        {userRole === "admin" && <AdminMfaPanel />}
+        {userRole === "admin" && (
+          <AdminMfaPanel
+            hasAdminMfaAccess={hasAdminMfaAccess}
+            onVerified={onAdminMfaVerified}
+          />
+        )}
         <button className="secondary-button" type="button" onClick={onSignOut}>
           Sign out
         </button>
@@ -1121,19 +1161,43 @@ function AuthPanel({
   );
 }
 
-function AdminMfaPanel() {
-  const [factorId, setFactorId] = useState("");
-  const [challengeId, setChallengeId] = useState("");
-  const [qrCode, setQrCode] = useState("");
-  const [secret, setSecret] = useState("");
-  const [code, setCode] = useState("");
+function AdminMfaPanel({ hasAdminMfaAccess, onVerified }) {
+  const [verifiedFactors, setVerifiedFactors] = useState([]);
+  const [selectedFactorId, setSelectedFactorId] = useState("");
+  const [enrollment, setEnrollment] = useState(null);
+  const [enrollCode, setEnrollCode] = useState("");
+  const [challengeCode, setChallengeCode] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  const refreshMfaState = useCallback(async () => {
+    if (!supabase) return;
+
+    const { data, error: factorsError } = await supabase.auth.mfa.listFactors();
+    if (factorsError) {
+      setError(factorsError.message);
+      return;
+    }
+
+    const totpFactors = data?.totp || [];
+    setVerifiedFactors(totpFactors);
+    setSelectedFactorId((currentFactorId) =>
+      totpFactors.some((factor) => factor.id === currentFactorId)
+        ? currentFactorId
+        : totpFactors[0]?.id || "",
+    );
+  }, []);
+
+  useEffect(() => {
+    refreshMfaState();
+  }, [refreshMfaState]);
 
   async function startMfaEnrollment() {
     if (!supabase) return;
     setError("");
     setMessage("");
+    setIsLoading(true);
 
     const { data, error: enrollError } = await supabase.auth.mfa.enroll({
       factorType: "totp",
@@ -1142,6 +1206,7 @@ function AdminMfaPanel() {
 
     if (enrollError) {
       setError(enrollError.message);
+      setIsLoading(false);
       return;
     }
 
@@ -1151,56 +1216,136 @@ function AdminMfaPanel() {
 
     if (challengeError) {
       setError(challengeError.message);
+      setIsLoading(false);
       return;
     }
 
-    setFactorId(data.id);
-    setChallengeId(challenge.id);
-    setQrCode(data.totp.qr_code);
-    setSecret(data.totp.secret);
+    setEnrollment({
+      factorId: data.id,
+      challengeId: challenge.id,
+      qrCode: data.totp.qr_code,
+      secret: data.totp.secret,
+    });
+    setEnrollCode("");
     setMessage("Scan the QR code in an authenticator app, then enter the code.");
+    setIsLoading(false);
   }
 
-  async function verifyMfa(event) {
+  async function verifyEnrollment(event) {
     event.preventDefault();
-    if (!supabase || !factorId || !challengeId) return;
+    if (!supabase || !enrollment) return;
     setError("");
+    setIsLoading(true);
 
     const { error: verifyError } = await supabase.auth.mfa.verify({
-      factorId,
-      challengeId,
-      code,
+      factorId: enrollment.factorId,
+      challengeId: enrollment.challengeId,
+      code: enrollCode,
     });
 
     if (verifyError) {
       setError(verifyError.message);
+      setIsLoading(false);
       return;
     }
 
     setMessage("Admin MFA is verified for this session.");
-    setQrCode("");
-    setSecret("");
-    setCode("");
+    setEnrollment(null);
+    setEnrollCode("");
+    await refreshMfaState();
+    await onVerified?.();
+    setIsLoading(false);
   }
 
-  const qrCodeSrc = qrCode.startsWith("data:")
-    ? qrCode
-    : `data:image/svg+xml;utf8,${encodeURIComponent(qrCode)}`;
+  async function verifyExistingFactor(event) {
+    event.preventDefault();
+    if (!supabase || !selectedFactorId) return;
+    setError("");
+    setMessage("");
+    setIsLoading(true);
+
+    const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({
+      factorId: selectedFactorId,
+      code: challengeCode,
+    });
+
+    if (verifyError) {
+      setError(verifyError.message);
+      setIsLoading(false);
+      return;
+    }
+
+    setChallengeCode("");
+    setMessage("Admin MFA is verified for this session.");
+    await refreshMfaState();
+    await onVerified?.();
+    setIsLoading(false);
+  }
+
+  const qrCodeSrc = enrollment?.qrCode?.startsWith("data:")
+    ? enrollment.qrCode
+    : `data:image/svg+xml;utf8,${encodeURIComponent(enrollment?.qrCode || "")}`;
 
   return (
     <div className="mfa-panel">
-      <button className="secondary-button" type="button" onClick={startMfaEnrollment}>
-        Set up admin MFA
-      </button>
-      {qrCode && (
-        <form className="mfa-enroll" onSubmit={verifyMfa}>
+      <p className="mfa-status">
+        {hasAdminMfaAccess
+          ? "Admin troubleshooting tools are available for this session."
+          : "Verify admin MFA before using troubleshooting tools."}
+      </p>
+
+      {!hasAdminMfaAccess && verifiedFactors.length > 0 && !enrollment && (
+        <form className="mfa-enroll" onSubmit={verifyExistingFactor}>
+          {verifiedFactors.length > 1 && (
+            <label className="field">
+              <span>Authenticator</span>
+              <select
+                value={selectedFactorId}
+                onChange={(event) => setSelectedFactorId(event.target.value)}
+              >
+                {verifiedFactors.map((factor) => (
+                  <option key={factor.id} value={factor.id}>
+                    {factor.friendly_name || "Authenticator app"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="field">
+            <span>Admin MFA code</span>
+            <input
+              inputMode="numeric"
+              value={challengeCode}
+              onChange={(event) => setChallengeCode(event.target.value)}
+              placeholder="123456"
+            />
+          </label>
+          <button className="primary-button" disabled={isLoading || !challengeCode} type="submit">
+            Verify admin MFA
+          </button>
+        </form>
+      )}
+
+      {!verifiedFactors.length && !enrollment && (
+        <button className="secondary-button" disabled={isLoading} type="button" onClick={startMfaEnrollment}>
+          Set up admin MFA
+        </button>
+      )}
+
+      {enrollment && (
+        <form className="mfa-enroll" onSubmit={verifyEnrollment}>
           <img alt="Authenticator QR code" src={qrCodeSrc} />
-          <p>Secret: {secret}</p>
+          <p>Secret: {enrollment.secret}</p>
           <label className="field">
             <span>Authenticator code</span>
-            <input value={code} onChange={(event) => setCode(event.target.value)} placeholder="123456" />
+            <input
+              inputMode="numeric"
+              value={enrollCode}
+              onChange={(event) => setEnrollCode(event.target.value)}
+              placeholder="123456"
+            />
           </label>
-          <button className="primary-button" type="submit">
+          <button className="primary-button" disabled={isLoading || !enrollCode} type="submit">
             Verify MFA
           </button>
         </form>
@@ -1262,15 +1407,15 @@ function BoardControls({
 }
 
 function MatchSidebar({
+  canUseAdminTools,
   isSignedIn,
   participants,
   resetSamples,
   selectedMatches,
   selectedParticipant,
   setSelectedParticipantId,
-  userRole,
 }) {
-  const canSwitchParticipant = !isSignedIn || userRole === "admin";
+  const canSwitchParticipant = !isSignedIn || canUseAdminTools;
 
   return (
     <aside className="side-panel">
