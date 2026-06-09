@@ -1830,34 +1830,42 @@ function RideCard({
     status !== "full" &&
     group.type !== "carpool-request" &&
     inquiries.length > 0;
-  const contactStatusText = alreadyRiding
-    ? groupMeta.committedButtonLabel
-    : alreadyInquired
-      ? groupMeta.inquiredLabel
-      : isHost
-        ? "Your post"
-        : status === "full"
-          ? "Full"
-          : "Not a fit";
-  const actionGuidance = alreadyRiding
-    ? "This match is recorded."
-    : canSelfMarkMatch
-      ? "Record the match after everyone agrees."
-      : alreadyInquired && group.type === "carpool"
-        ? "Contact noted. The driver can mark the match."
-        : alreadyInquired
-          ? "Contact noted. Mark matched after agreement."
-          : canInquire && group.type === "carpool-request"
-            ? "Use Email or Phone to offer help, then note it here."
-            : canInquire
-              ? "Use Email or Phone first, then note that contact happened."
-              : isHost && hostCanMarkInquiries
-                ? "Review contacted people above and mark matched after agreement."
-                : isHost
-                  ? "This is your post."
-                  : status === "full"
-                    ? "This post is full."
-                    : "This does not match your current ride plan.";
+  const footerHostMatch = hostCanMarkInquiries && inquiries.length === 1 ? inquiries[0] : null;
+  const canMarkMatchFromFooter = canSelfMarkMatch || Boolean(footerHostMatch);
+  const footerMatchParticipantId = footerHostMatch?.id;
+  let contactStatusText = "Not a fit";
+  if (alreadyRiding) {
+    contactStatusText = groupMeta.committedButtonLabel;
+  } else if (alreadyInquired || footerHostMatch) {
+    contactStatusText = groupMeta.inquiredLabel;
+  } else if (isHost) {
+    contactStatusText = "Your post";
+  } else if (status === "committed") {
+    contactStatusText = "Already matched";
+  } else if (status === "full") {
+    contactStatusText = "Full";
+  }
+
+  let actionGuidance = "This does not match your current ride plan.";
+  if (alreadyRiding || status === "committed") {
+    actionGuidance = "This match is recorded.";
+  } else if (canMarkMatchFromFooter) {
+    actionGuidance = "Record the match after everyone agrees.";
+  } else if (alreadyInquired && group.type === "carpool") {
+    actionGuidance = "Contact noted. The driver can mark the match.";
+  } else if (alreadyInquired) {
+    actionGuidance = "Contact noted. Mark matched after agreement.";
+  } else if (canInquire && group.type === "carpool-request") {
+    actionGuidance = "Use Email or Phone to offer help, then note it here.";
+  } else if (canInquire) {
+    actionGuidance = "Use Email or Phone first, then note that contact happened.";
+  } else if (isHost && hostCanMarkInquiries) {
+    actionGuidance = "Review contacted people above and mark matched after agreement.";
+  } else if (isHost) {
+    actionGuidance = "This is your post.";
+  } else if (status === "full") {
+    actionGuidance = "This post is full.";
+  }
 
   return (
     <article className={`ride-card status-${status}`}>
@@ -1930,7 +1938,7 @@ function RideCard({
               {inquiries.map((rider) => (
                 <span className="inquiry-item" key={rider.id}>
                   {rider.name}
-                  {hostCanMarkInquiries && (
+                  {hostCanMarkInquiries && !footerHostMatch && (
                     <button className="text-button" type="button" onClick={() => onCommit(group.id, rider.id)}>
                       Mark matched
                     </button>
@@ -1954,10 +1962,10 @@ function RideCard({
             {contactStatusText}
           </span>
         )}
-        {canSelfMarkMatch ? (
-          <button className="primary-button small" type="button" onClick={() => onCommit(group.id)}>
+        {canMarkMatchFromFooter ? (
+          <button className="primary-button small" type="button" onClick={() => onCommit(group.id, footerMatchParticipantId)}>
             <CheckCircle2 size={15} aria-hidden="true" />
-            {groupMeta.commitLabel}
+            {footerHostMatch ? "Mark matched" : groupMeta.commitLabel}
           </button>
         ) : (
           <p className="action-note">{actionGuidance}</p>
@@ -1970,7 +1978,11 @@ function RideCard({
         >
           <option value="open">Open</option>
           <option value="pending">Pending</option>
-          <option value="committed">Matched</option>
+          {status === "committed" && (
+            <option value="committed" disabled>
+              Matched
+            </option>
+          )}
           <option value="full">Full</option>
         </select>
       </div>

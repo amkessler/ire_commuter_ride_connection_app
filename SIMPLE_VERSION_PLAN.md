@@ -29,6 +29,7 @@ The route map, separate status dashboard, and full match sidebar are removed fro
 - Require a contact marker before anyone can mark a match, so attendees contact each other first by email or phone and only record a match after mutual agreement.
 - Let carpool drivers finalize carpool matches. For Uber/Lyft split groups, let either the organizer or the contacted participant mark the match once contact has been recorded.
 - Do not send app-generated email notifications. The simple branch relies on visible email/phone links and honest contact-tracking language instead of a transactional email provider.
+- Keep `Matched` out of the ordinary status dropdown for unmatched posts; users should reach that state through `Mark matched`.
 
 ## No-Email Design Direction
 

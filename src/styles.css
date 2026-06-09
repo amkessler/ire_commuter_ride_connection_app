@@ -1354,8 +1354,7 @@ button:focus-visible {
   width: 100%;
 }
 
-.action-status,
-.action-note {
+.action-status {
   display: flex;
   align-items: center;
   min-height: 56px;
@@ -1379,13 +1378,12 @@ button:focus-visible {
 }
 
 .action-note {
-  justify-content: flex-start;
+  align-self: center;
   margin: 0;
-  border: 1px solid #ede6d8;
-  background: #fbfaf5;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 800;
+  line-height: 1.35;
   text-align: left;
 }
 

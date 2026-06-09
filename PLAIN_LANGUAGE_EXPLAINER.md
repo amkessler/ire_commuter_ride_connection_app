@@ -1089,6 +1089,7 @@ The fix included frontend and database logic:
 - Disable match actions until the contact marker exists.
 - Let carpool drivers finalize their own carpool matches.
 - Let Uber/Lyft organizers or inquirers mark a match after contact.
+- Keep `Matched` out of the ordinary status dropdown for unmatched posts, so people do not skip the contact-first path.
 
 Lesson: the right button is not always the fastest button. Sometimes good product design slows one action down so the real-world agreement is cleaner.
 
