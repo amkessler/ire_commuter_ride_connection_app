@@ -92,7 +92,16 @@ Apply database changes:
 supabase db push
 ```
 
-Regular users sign in by email one-time code or magic link. In the Supabase dashboard, configure the email template to include a one-time token if you want the in-app code entry flow to be primary.
+Regular users sign in by email one-time code or magic link. The app supports both, but the in-app `One-time code` field only works if the Supabase email template sends a token.
+
+OTP dashboard checklist:
+
+1. Open Supabase dashboard for `ire_commuter_rides`.
+2. Go to `Authentication` -> `Emails`.
+3. Open the confirmation/login email template used by passwordless email sign-in.
+4. Include `{{ .Token }}` in the email body for the code-entry flow.
+5. Keep `{{ .ConfirmationURL }}` only if magic-link login should also be supported.
+6. Send a test login email and verify the code works in the app's `One-time code` field.
 
 Admins are controlled by `public.admin_users`. Add an admin by inserting that user's auth UUID:
 
