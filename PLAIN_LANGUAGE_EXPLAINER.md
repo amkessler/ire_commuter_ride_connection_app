@@ -669,7 +669,7 @@ Inside the main view, the layout has three conceptual zones:
 
 - Form area: the user's current ride plan.
 - Match area: likely rides and requests.
-- Compact controls: search, corridor, and availability filtering.
+- Compact controls: search, corridor, status filtering, and route-fit context.
 
 This matches the user's workflow:
 
@@ -680,6 +680,8 @@ This matches the user's workflow:
 5. Contact the other person directly by email or phone, mark that contact happened, then mark a match after agreement.
 
 The app uses cards for individual rides, which makes sense because each ride is a repeated item with its own status, people, capacity, and actions.
+
+The simple branch keeps each ride card summary-first. The card shows the ride type, route area, trip slots, capacity, contact buttons, and next action immediately. Longer notes and contact/match history live behind `Details and history`, which keeps the board from feeling like every card is shouting at once.
 
 The app avoids nested cards and keeps the main dashboard organized with clear panels.
 
@@ -1090,7 +1092,7 @@ The fix included frontend and database logic:
 - Let carpool drivers finalize their own carpool matches.
 - Let Uber/Lyft organizers or inquirers mark a match after contact.
 - Keep `Matched` out of the ordinary status dropdown for unmatched posts, so people do not skip the contact-first path.
-- Keep sign-in, profile editing, and owner-only status controls out of the way until they are needed.
+- Keep sign-in, profile editing, prototype preview tools, card history, and owner-only status controls out of the way until they are needed.
 
 Lesson: the right button is not always the fastest button. Sometimes good product design slows one action down so the real-world agreement is cleaner.
 

@@ -824,6 +824,29 @@ button:focus-visible {
   color: var(--danger);
 }
 
+.ride-card.status-open,
+.ride-card.status-pending,
+.ride-card.status-committed,
+.ride-card.status-full {
+  color: var(--ink);
+}
+
+.status-badge.status-open {
+  color: var(--green);
+}
+
+.status-badge.status-pending {
+  color: var(--gold);
+}
+
+.status-badge.status-committed {
+  color: var(--blue);
+}
+
+.status-badge.status-full {
+  color: var(--danger);
+}
+
 .capacity-meter {
   display: grid;
   gap: 7px;
@@ -858,7 +881,9 @@ button:focus-visible {
 
 .host-block {
   display: grid;
-  gap: 7px;
+  grid-template-columns: minmax(120px, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
 }
 
 .host-role {
@@ -867,6 +892,18 @@ button:focus-visible {
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.host-block .host-role {
+  grid-column: 1 / -1;
+}
+
+.host-block strong {
+  min-width: 0;
+}
+
+.host-block .contact-row {
+  justify-content: flex-end;
 }
 
 .contact-row {
@@ -906,6 +943,35 @@ button:focus-visible {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 900;
+}
+
+.ride-details {
+  border-top: 1px solid #e5ebe7;
+  padding-top: 2px;
+}
+
+.ride-details summary {
+  display: list-item;
+  width: fit-content;
+  min-height: 32px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 32px;
+}
+
+.ride-details-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ride-details-body p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
 }
 
 .people-line {
@@ -1265,6 +1331,51 @@ button:focus-visible {
   background: transparent;
 }
 
+.prototype-drawer {
+  border: 1px solid #dbe3de;
+  border-radius: 8px;
+  background: #f8faf8;
+}
+
+.prototype-drawer summary {
+  min-height: 42px;
+  padding: 10px 12px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.prototype-drawer > div {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.prototype-drawer .secondary-button {
+  align-self: end;
+  min-height: 44px;
+}
+
+.fit-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f7f4ea;
+}
+
+.fit-legend > span:first-child {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .simple-best-strip {
   display: flex;
   flex-wrap: wrap;
@@ -1498,5 +1609,14 @@ button:focus-visible {
   .simple-app .slot-grid,
   .simple-app .card-actions {
     grid-template-columns: 1fr;
+  }
+
+  .prototype-drawer > div,
+  .host-block {
+    grid-template-columns: 1fr;
+  }
+
+  .host-block .contact-row {
+    justify-content: flex-start;
   }
 }

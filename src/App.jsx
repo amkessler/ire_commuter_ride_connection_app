@@ -1220,7 +1220,6 @@ function App() {
               editLabel={session ? "Edit ride info" : "Add a sample profile"}
             />
           )}
-          <PrototypeTools isSignedIn={Boolean(session)} resetSamples={resetSamples} />
         </section>
 
         <section className="simple-panel simple-board">
@@ -1232,22 +1231,17 @@ function App() {
                 <h2>Likely matches</h2>
               </div>
             </div>
-            {canSwitchParticipant && (
-              <label className="field preview-field">
-                <span>Preview as</span>
-                <select
-                  value={selectedParticipant?.id || ""}
-                  onChange={(event) => setSelectedParticipantId(event.target.value)}
-                >
-                  {participants.map((participant) => (
-                    <option key={participant.id} value={participant.id}>
-                      {participant.name} - {participant.neighborhood}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
           </div>
+
+          {canSwitchParticipant && (
+            <PrototypePreviewTools
+              isSignedIn={Boolean(session)}
+              participants={participants}
+              resetSamples={resetSamples}
+              selectedParticipant={selectedParticipant}
+              setSelectedParticipantId={setSelectedParticipantId}
+            />
+          )}
 
           {selectedParticipant && (
             <div className="simple-current-person">
@@ -1267,6 +1261,8 @@ function App() {
             statusFilter={statusFilter}
           />
 
+          <FitLegend />
+
           {selectedMatches.length > 0 && (
             <div className="simple-best-strip">
               {selectedMatches.slice(0, 3).map(({ group, match }) => {
@@ -1274,7 +1270,7 @@ function App() {
                 const groupMeta = getGroupTypeMeta(group.type);
                 return (
                   <span key={group.id}>
-                    {groupMeta.title}: {host?.neighborhood || "neighborhood pending"} · {Math.max(match.score, 0)} fit
+                    {groupMeta.title}: {host?.neighborhood || "neighborhood pending"} · {Math.max(match.score, 0)} route fit
                   </span>
                 );
               })}
@@ -1659,18 +1655,48 @@ function BoardControls({
   );
 }
 
-function PrototypeTools({ isSignedIn, resetSamples }) {
+function PrototypePreviewTools({
+  isSignedIn,
+  participants,
+  resetSamples,
+  selectedParticipant,
+  setSelectedParticipantId,
+}) {
   return (
-    <section className="tool-block">
-      <div className="section-heading">
-        <RotateCcw size={18} aria-hidden="true" />
-        <h2>{isSignedIn ? "Data sync" : "Prototype data"}</h2>
+    <details className="prototype-drawer">
+      <summary>{isSignedIn ? "Admin preview tools" : "Prototype preview tools"}</summary>
+      <div>
+        <label className="field preview-field">
+          <span>Preview as</span>
+          <select
+            value={selectedParticipant?.id || ""}
+            onChange={(event) => setSelectedParticipantId(event.target.value)}
+          >
+            {participants.map((participant) => (
+              <option key={participant.id} value={participant.id}>
+                {participant.name} - {participant.neighborhood}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="secondary-button" type="button" onClick={resetSamples}>
+          <RotateCcw size={16} aria-hidden="true" />
+          {isSignedIn ? "Reload Supabase data" : "Reset sample board"}
+        </button>
       </div>
-      <button className="secondary-button" type="button" onClick={resetSamples}>
-        <RotateCcw size={16} aria-hidden="true" />
-        {isSignedIn ? "Reload Supabase data" : "Reset sample board"}
-      </button>
-    </section>
+    </details>
+  );
+}
+
+function FitLegend() {
+  return (
+    <div className="fit-legend" aria-label="Route fit scale">
+      <span>Route fit</span>
+      <span className="fit-tag fit-strong">Same corridor</span>
+      <span className="fit-tag fit-good">Nearby route</span>
+      <span className="fit-tag fit-possible">Flexible stretch</span>
+      <span className="fit-tag fit-weak">Likely detour</span>
+    </div>
   );
 }
 
@@ -1918,6 +1944,8 @@ function RideCard({
   const footerHostMatch = hostCanMarkInquiries && inquiries.length === 1 ? inquiries[0] : null;
   const canMarkMatchFromFooter = canSelfMarkMatch || Boolean(footerHostMatch);
   const footerMatchParticipantId = footerHostMatch?.id;
+  const hasActivity = riders.length > 0 || inquiries.length > 0;
+  const hasDetails = Boolean(host?.notes || hasActivity);
   let contactStatusText = "Not a fit";
   if (alreadyRiding) {
     contactStatusText = groupMeta.committedButtonLabel;
@@ -1984,10 +2012,10 @@ function RideCard({
 
       {match && (
         <div className="match-strip">
-          <ScorePill match={match} />
-          <span className={`fit-tag fit-${match.routeFit.level}`}>{match.routeFit.label}</span>
-          <span>{match.sharedSlots.length} shared slots</span>
-        </div>
+        <ScorePill match={match} />
+        <span className={`fit-tag fit-${match.routeFit.level}`}>{match.routeFit.label}</span>
+        <span>{match.sharedSlots.length} shared slots</span>
+      </div>
       )}
 
       <div className="simple-capacity" aria-label={counts.label}>
@@ -1998,7 +2026,6 @@ function RideCard({
       <div className="host-block">
         <span className="host-role">{groupMeta.contactName}</span>
         <strong>{host?.name || "Unknown host"}</strong>
-        {host?.notes && <span>{host.notes}</span>}
         <div className="contact-row">
           {host?.email && (
             <button
@@ -2026,29 +2053,37 @@ function RideCard({
         </div>
       </div>
 
-      {(riders.length > 0 || inquiries.length > 0) && (
-        <div className="simple-activity">
-          {riders.length > 0 && (
-            <span>
-              <strong>{groupMeta.committedLabel}</strong> {riders.map((rider) => rider.name).join(", ")}
-            </span>
-          )}
-          {inquiries.length > 0 && (
-            <div className="inquiry-list">
-              <strong>{groupMeta.inquiriesLabel}</strong>
-              {inquiries.map((rider) => (
-                <span className="inquiry-item" key={rider.id}>
-                  {rider.name}
-                  {hostCanMarkInquiries && !footerHostMatch && (
-                    <button className="text-button" type="button" onClick={() => onCommit(group.id, rider.id)}>
-                      Mark matched
-                    </button>
-                  )}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+      {hasDetails && (
+        <details className="ride-details">
+          <summary>Details and history</summary>
+          <div className="ride-details-body">
+            {host?.notes && <p>{host.notes}</p>}
+            {hasActivity && (
+              <div className="simple-activity">
+                {riders.length > 0 && (
+                  <span>
+                    <strong>{groupMeta.committedLabel}</strong> {riders.map((rider) => rider.name).join(", ")}
+                  </span>
+                )}
+                {inquiries.length > 0 && (
+                  <div className="inquiry-list">
+                    <strong>{groupMeta.inquiriesLabel}</strong>
+                    {inquiries.map((rider) => (
+                      <span className="inquiry-item" key={rider.id}>
+                        {rider.name}
+                        {hostCanMarkInquiries && !footerHostMatch && (
+                          <button className="text-button" type="button" onClick={() => onCommit(group.id, rider.id)}>
+                            Mark matched
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </details>
       )}
 
       <div className={`card-actions${canManageStatus ? "" : " no-status-control"}`}>
@@ -2094,7 +2129,7 @@ function RideCard({
 
 function ScorePill({ match }) {
   const level = match.score >= 80 ? "high" : match.score >= 55 ? "medium" : "low";
-  return <span className={`score-pill score-${level}`}>{Math.max(match.score, 0)} fit</span>;
+  return <span className={`score-pill score-${level}`}>{Math.max(match.score, 0)} route fit</span>;
 }
 
 function StatusBadge({ status }) {

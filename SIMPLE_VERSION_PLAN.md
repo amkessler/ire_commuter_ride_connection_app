@@ -17,15 +17,18 @@ The page has two primary areas:
 - **Your plan:** one compact form for name, contact info, corridor, ride plan, relevant seat/group counts, trip slots, and notes.
 - **Likely matches:** a filtered list of available posts, sorted by route and schedule fit for the selected participant.
 
-The route map, separate status dashboard, and full match sidebar are removed from the primary interface. Sample/admin participant preview remains available as a compact control because it is useful for testing and troubleshooting.
+The route map, separate status dashboard, and full match sidebar are removed from the primary interface. Sample/admin participant preview remains available in a collapsed drawer because it is useful for testing and troubleshooting but should not read as part of the normal attendee workflow.
 
 ## Simplification Choices
 
 - Show only the numeric fields that apply to the selected ride plan.
 - Collapse sign-in and saved ride-plan details until the user needs to interact with them.
+- Collapse prototype/admin preview tools until they are needed.
 - Replace the old disabled-field explanation with one plain sentence under the ride-plan menu.
 - Keep search and corridor filtering, but reduce status filtering to "Available posts" or "All posts."
-- Make cards focus on connection essentials: ride type, corridor, neighborhood, trip slots, capacity/need, contact links, and one or two actions.
+- Make cards focus on connection essentials: ride type, corridor, neighborhood, trip slots, capacity/need, contact reveal buttons, and one or two actions.
+- Put notes and contact/match history behind a `Details and history` disclosure so the board stays easy to scan.
+- Show a compact route-fit legend so labels like `Same corridor`, `Nearby route`, and `Likely detour` have context.
 - Keep status controls on cards so hosts/admins can still mark posts as open, pending, matched, or full. The database still stores the final match status as `committed`.
 - Require a contact marker before anyone can mark a match, so attendees contact each other first by email or phone and only record a match after mutual agreement.
 - Let carpool drivers finalize carpool matches. For Uber/Lyft split groups, let either the organizer or the contacted participant mark the match once contact has been recorded.
