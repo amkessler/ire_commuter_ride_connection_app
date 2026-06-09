@@ -33,7 +33,7 @@ The route map, separate status dashboard, and full match sidebar are removed fro
 
 ## No-Email Design Direction
 
-- Treat `Email` and `Phone` as the primary actions on every card.
+- Treat `Reveal email` and `Reveal phone` as the primary contact actions on every card.
 - Use secondary buttons only for record keeping: `Record contact`, `Record help offer`, and `Mark matched`.
 - Avoid labels such as `Inquire` or `Send request` because they imply the app notified the other person.
 - Do not use disabled buttons for instructions such as `Contact first`; show that guidance as plain helper text instead.

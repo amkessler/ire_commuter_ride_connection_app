@@ -1794,6 +1794,7 @@ function RideCard({
   onCommit,
   onStatusChange,
 }) {
+  const [revealedContact, setRevealedContact] = useState(null);
   const host = participants.find((participant) => participant.id === group.hostId);
   const riders = group.riderIds
     .map((id) => participants.find((participant) => participant.id === id))
@@ -1856,9 +1857,9 @@ function RideCard({
   } else if (alreadyInquired) {
     actionGuidance = "Contact noted. Mark matched after agreement.";
   } else if (canInquire && group.type === "carpool-request") {
-    actionGuidance = "Use Email or Phone to offer help, then note it here.";
+    actionGuidance = "Reveal Email or Phone to offer help, then note it here.";
   } else if (canInquire) {
-    actionGuidance = "Use Email or Phone first, then note that contact happened.";
+    actionGuidance = "Reveal Email or Phone first, then note that contact happened.";
   } else if (isHost && hostCanMarkInquiries) {
     actionGuidance = "Review contacted people above and mark matched after agreement.";
   } else if (isHost) {
@@ -1910,16 +1911,26 @@ function RideCard({
         {host?.notes && <span>{host.notes}</span>}
         <div className="contact-row">
           {host?.email && (
-            <a href={`mailto:${host.email}`}>
+            <button
+              className="contact-reveal-button"
+              type="button"
+              onClick={() => setRevealedContact(revealedContact === "email" ? null : "email")}
+              aria-expanded={revealedContact === "email"}
+            >
               <Mail size={14} aria-hidden="true" />
-              Email
-            </a>
+              {revealedContact === "email" ? host.email : "Reveal email"}
+            </button>
           )}
           {host?.phone && (
-            <a href={`tel:${host.phone}`}>
+            <button
+              className="contact-reveal-button"
+              type="button"
+              onClick={() => setRevealedContact(revealedContact === "phone" ? null : "phone")}
+              aria-expanded={revealedContact === "phone"}
+            >
               <Phone size={14} aria-hidden="true" />
-              Phone
-            </a>
+              {revealedContact === "phone" ? host.phone : "Reveal phone"}
+            </button>
           )}
           {!host?.email && !host?.phone && <span className="private-contact">Contact hidden</span>}
         </div>

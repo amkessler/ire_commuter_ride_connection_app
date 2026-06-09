@@ -1084,7 +1084,7 @@ That changed the workflow. The app now treats direct contact as the first step a
 
 The fix included frontend and database logic:
 
-- Email or call first.
+- Reveal email or phone first, then email or call outside the app.
 - Mark that contact or a help offer happened.
 - Disable match actions until the contact marker exists.
 - Let carpool drivers finalize their own carpool matches.
@@ -1182,14 +1182,14 @@ How to avoid trouble:
 
 ## Pitfall: Contact Info Is Sensitive
 
-The simple branch displays email and phone links directly so attendees can coordinate before marking a match.
+The simple branch lets attendees reveal email or phone details on a card so they can coordinate before marking a match.
 
 That may be right for a controlled attendee group. It may not be right for a fully public app.
 
 How to avoid trouble:
 
-- Add private contact reveal.
-- Hide phone numbers by default.
+- Keep contact details hidden until the user chooses to reveal them.
+- Let people copy or use the revealed details outside the app.
 - Let users choose what to share.
 - Add organizer moderation.
 - Consider using inquiry messages instead of direct contact display.
@@ -1372,7 +1372,7 @@ attendee fills form
 And here is the contact-first match flow:
 
 ```text
-attendee clicks Email or Phone
+attendee clicks Reveal email or Reveal phone
   -> people talk directly outside the app
   -> attendee marks contact or help offered in the app
   -> allowed user marks the match

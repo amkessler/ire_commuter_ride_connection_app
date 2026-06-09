@@ -9,7 +9,7 @@ The app has two primary areas:
 - `Your plan`: one form where a signed-in attendee creates or edits their single ride profile.
 - `Likely matches`: a compact list of relevant carpool offers, carpool requests, and Uber/Lyft split groups.
 
-Users can share direct contact details, use email or phone to reach each other, mark that contact or a help offer happened, and then mark a match only after there has been mutual agreement. The UI deliberately avoids letting someone instantly commit to another attendee's ride without prior contact.
+Users can reveal email or phone details when they want to reach someone, mark that contact or a help offer happened, and then mark a match only after there has been mutual agreement. The UI deliberately avoids letting someone instantly commit to another attendee's ride without prior contact.
 
 The workflow rules are:
 
