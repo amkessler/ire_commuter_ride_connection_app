@@ -27,13 +27,14 @@ import {
 const storageKey = "ire-ride-connection-state-v1";
 
 const slots = [
-  { id: "thuAm", label: "Thu AM" },
-  { id: "thuPm", label: "Thu PM" },
-  { id: "friAm", label: "Fri AM" },
-  { id: "friPm", label: "Fri PM" },
-  { id: "satAm", label: "Sat AM" },
-  { id: "satPm", label: "Sat PM" },
-  { id: "sunAm", label: "Sun AM" },
+  { id: "thuAm", label: "Thu AM", direction: "To conference" },
+  { id: "thuPm", label: "Thu PM", direction: "Return trip" },
+  { id: "friAm", label: "Fri AM", direction: "To conference" },
+  { id: "friPm", label: "Fri PM", direction: "Return trip" },
+  { id: "satAm", label: "Sat AM", direction: "To conference" },
+  { id: "satPm", label: "Sat PM", direction: "Return trip" },
+  { id: "sunAm", label: "Sun AM", direction: "To conference" },
+  { id: "sunPm", label: "Sun PM", direction: "Return trip" },
 ];
 
 const corridors = [
@@ -1726,7 +1727,10 @@ function EntryForm({
                 checked={form.availability[slot.id]}
                 onChange={() => onAvailabilityChange(slot.id)}
               />
-              <span>{slot.label}</span>
+              <span className="slot-label">
+                <strong>{slot.label}</strong>
+                <small>{slot.direction}</small>
+              </span>
             </label>
           ))}
         </div>
