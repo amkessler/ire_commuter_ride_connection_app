@@ -385,6 +385,15 @@ a {
   padding: 8px 10px;
 }
 
+.field input:disabled,
+.field select:disabled,
+.field textarea:disabled {
+  background: #eef1ef;
+  color: #7a858d;
+  border-color: #d6ddd8;
+  cursor: not-allowed;
+}
+
 .field textarea {
   min-height: 86px;
   resize: vertical;

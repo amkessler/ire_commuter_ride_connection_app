@@ -135,6 +135,7 @@ const sampleParticipants = [
     corridor: "dc-nw",
     intent: "offer",
     transportPreference: "carpool",
+    seatsNeeded: 0,
     seatsAvailable: 2,
     maxPartySize: 3,
     availability: makeAvailability(["thuAm", "thuPm", "friAm", "friPm", "satAm", "satPm", "sunAm"]),
@@ -149,8 +150,9 @@ const sampleParticipants = [
     corridor: "dc-ne",
     intent: "need-seat",
     transportPreference: "either",
+    seatsNeeded: 1,
     seatsAvailable: 0,
-    maxPartySize: 1,
+    maxPartySize: 0,
     availability: makeAvailability(["thuAm", "thuPm", "friAm", "friPm", "sunAm"]),
     notes: "Flexible pickup near Eastern Market or Union Station.",
   },
@@ -163,6 +165,7 @@ const sampleParticipants = [
     corridor: "arlington-alexandria",
     intent: "offer",
     transportPreference: "carpool",
+    seatsNeeded: 0,
     seatsAvailable: 3,
     maxPartySize: 4,
     availability: makeAvailability(["friAm", "friPm", "satAm", "satPm"]),
@@ -177,6 +180,7 @@ const sampleParticipants = [
     corridor: "silver-spring-takoma",
     intent: "split-rideshare",
     transportPreference: "rideshare",
+    seatsNeeded: 0,
     seatsAvailable: 0,
     maxPartySize: 3,
     availability: makeAvailability(["thuAm", "friAm", "satAm", "sunAm"]),
@@ -191,8 +195,9 @@ const sampleParticipants = [
     corridor: "pg-county",
     intent: "need-seat",
     transportPreference: "carpool",
+    seatsNeeded: 1,
     seatsAvailable: 0,
-    maxPartySize: 1,
+    maxPartySize: 0,
     availability: makeAvailability(["friAm", "friPm", "satAm"]),
     notes: "Hoping to join someone coming down the east side.",
   },
@@ -205,6 +210,7 @@ const sampleParticipants = [
     corridor: "fairfax-falls-church",
     intent: "split-rideshare",
     transportPreference: "rideshare",
+    seatsNeeded: 0,
     seatsAvailable: 0,
     maxPartySize: 4,
     availability: makeAvailability(["thuAm", "thuPm", "friAm", "sunAm"]),
@@ -219,6 +225,7 @@ const sampleParticipants = [
     corridor: "bethesda-rockville",
     intent: "offer",
     transportPreference: "carpool",
+    seatsNeeded: 0,
     seatsAvailable: 1,
     maxPartySize: 2,
     availability: makeAvailability(["thuAm", "thuPm", "friAm", "friPm", "sunAm"]),
@@ -233,6 +240,7 @@ const sampleParticipants = [
     corridor: "dc-ne",
     intent: "split-rideshare",
     transportPreference: "rideshare",
+    seatsNeeded: 0,
     seatsAvailable: 0,
     maxPartySize: 3,
     availability: makeAvailability(["thuAm", "friAm", "satAm"]),
@@ -311,8 +319,9 @@ const blankForm = {
   corridor: "dc-nw",
   intent: "need-seat",
   transportPreference: "either",
+  seatsNeeded: 1,
   seatsAvailable: 1,
-  maxPartySize: 3,
+  maxPartySize: 0,
   availability: makeAvailability(["thuAm", "friAm"]),
   notes: "",
 };
@@ -361,10 +370,64 @@ function participantToForm(participant) {
     corridor: participant.corridor || "dc-nw",
     intent: participant.intent || "need-seat",
     transportPreference: participant.transportPreference || "either",
+    seatsNeeded: participant.seatsNeeded ?? 1,
     seatsAvailable: participant.seatsAvailable ?? 1,
     maxPartySize: participant.maxPartySize ?? 3,
     availability: participant.availability || makeAvailability(["thuAm", "friAm"]),
     notes: participant.notes || "",
+  };
+}
+
+function ridePlanFromForm(formState) {
+  if (formState.intent === "offer") return "offer-carpool";
+  if (formState.intent === "split-rideshare") return "split-rideshare";
+  if (formState.intent === "both") return "open";
+  return "need-carpool";
+}
+
+function formFieldsFromRidePlan(ridePlan, currentForm) {
+  const nextForm = { ...currentForm };
+
+  if (ridePlan === "offer-carpool") {
+    nextForm.intent = "offer";
+    nextForm.transportPreference = "carpool";
+    nextForm.seatsNeeded = 0;
+    nextForm.seatsAvailable = Number(nextForm.seatsAvailable) > 0 ? nextForm.seatsAvailable : 1;
+  } else if (ridePlan === "split-rideshare") {
+    nextForm.intent = "split-rideshare";
+    nextForm.transportPreference = "rideshare";
+    nextForm.seatsNeeded = 0;
+    nextForm.seatsAvailable = 0;
+    nextForm.maxPartySize = Number(nextForm.maxPartySize) > 0 ? nextForm.maxPartySize : 2;
+  } else if (ridePlan === "open") {
+    nextForm.intent = "both";
+    nextForm.transportPreference = "either";
+    nextForm.seatsNeeded = Number(nextForm.seatsNeeded) > 0 ? nextForm.seatsNeeded : 1;
+    nextForm.seatsAvailable = 0;
+    nextForm.maxPartySize = Number(nextForm.maxPartySize) > 0 ? nextForm.maxPartySize : 2;
+  } else {
+    nextForm.intent = "need-seat";
+    nextForm.transportPreference = "carpool";
+    nextForm.seatsNeeded = Number(nextForm.seatsNeeded) > 0 ? nextForm.seatsNeeded : 1;
+    nextForm.seatsAvailable = 0;
+    nextForm.maxPartySize = 0;
+  }
+
+  return normalizeRideModeFields(nextForm);
+}
+
+function normalizeRideModeFields(formState) {
+  const ridePlan = ridePlanFromForm(formState);
+  const needsCarpoolSeat = ridePlan === "need-carpool" || ridePlan === "open";
+  const offersCarpool = ridePlan === "offer-carpool";
+  const splitsRideshare = ridePlan === "split-rideshare" || ridePlan === "open";
+
+  return {
+    ...formState,
+    seatsNeeded: needsCarpoolSeat ? formState.seatsNeeded : 0,
+    seatsAvailable: offersCarpool ? formState.seatsAvailable : 0,
+    maxPartySize: splitsRideshare || ridePlan === "open" ? formState.maxPartySize : 0,
+    transportPreference: ridePlan === "open" ? "either" : needsCarpoolSeat ? "carpool" : formState.transportPreference,
   };
 }
 
@@ -662,10 +725,16 @@ function App() {
 
   function updateFormField(field, value) {
     setRideInfoMessage("");
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
+    setForm((current) => {
+      if (field === "ridePlan") {
+        return formFieldsFromRidePlan(value, current);
+      }
+
+      return normalizeRideModeFields({
+        ...current,
+        [field]: value,
+      });
+    });
   }
 
   function updateAvailability(slotId) {
@@ -684,11 +753,13 @@ function App() {
     setRideInfoMessage("");
 
     const participantId = `p${Date.now()}`;
+    const normalizedForm = normalizeRideModeFields(form);
     const participant = {
-      ...form,
+      ...normalizedForm,
       id: participantId,
-      seatsAvailable: Number(form.seatsAvailable),
-      maxPartySize: Number(form.maxPartySize),
+      seatsNeeded: Number(normalizedForm.seatsNeeded),
+      seatsAvailable: Number(normalizedForm.seatsAvailable),
+      maxPartySize: Number(normalizedForm.maxPartySize),
     };
 
     const nextGroups = [...groups];
@@ -1540,6 +1611,11 @@ function EntryForm({
   saveMessage,
   submitLabel,
 }) {
+  const ridePlan = ridePlanFromForm(form);
+  const carpoolSeatsNeededDisabled = ridePlan === "offer-carpool" || ridePlan === "split-rideshare";
+  const carpoolSeatsOfferedDisabled = ridePlan === "need-carpool" || ridePlan === "split-rideshare" || ridePlan === "open";
+  const rideshareCapDisabled = ridePlan === "need-carpool" || ridePlan === "offer-carpool";
+
   return (
     <form className="entry-form" onSubmit={onSubmit}>
       <div className="field-grid">
@@ -1594,47 +1670,47 @@ function EntryForm({
         </select>
       </label>
 
-      <div className="field-grid">
-        <label className="field">
-          <span>Need or offer</span>
-          <select value={form.intent} onChange={(event) => onFieldChange("intent", event.target.value)}>
-            <option value="need-seat">Looking for a carpool seat</option>
-            <option value="offer">Offering carpool seats</option>
-            <option value="split-rideshare">Split Uber/Lyft</option>
-            <option value="both">Open to multiple options</option>
-          </select>
-        </label>
-        <label className="field">
-          <span>Preference</span>
-          <select
-            value={form.transportPreference}
-            onChange={(event) => onFieldChange("transportPreference", event.target.value)}
-          >
-            <option value="either">Either</option>
-            <option value="carpool">Carpool</option>
-            <option value="rideshare">Uber/Lyft split</option>
-          </select>
-        </label>
-      </div>
+      <label className="field">
+        <span>Ride plan</span>
+        <select value={ridePlan} onChange={(event) => onFieldChange("ridePlan", event.target.value)}>
+          <option value="need-carpool">I need a carpool seat</option>
+          <option value="offer-carpool">I can offer carpool seats</option>
+          <option value="split-rideshare">I want to split an Uber/Lyft</option>
+          <option value="open">I am open to either carpool or Uber/Lyft</option>
+        </select>
+      </label>
 
       <div className="field-grid">
         <label className="field">
-          <span>Carpool seats offered</span>
+          <span>Carpool seats needed</span>
           <input
+            disabled={carpoolSeatsNeededDisabled}
             min="0"
             max="6"
             type="number"
-            value={form.seatsAvailable}
+            value={carpoolSeatsNeededDisabled ? 0 : form.seatsNeeded}
+            onChange={(event) => onFieldChange("seatsNeeded", event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>Carpool seats offered</span>
+          <input
+            disabled={carpoolSeatsOfferedDisabled}
+            min="0"
+            max="6"
+            type="number"
+            value={carpoolSeatsOfferedDisabled ? 0 : form.seatsAvailable}
             onChange={(event) => onFieldChange("seatsAvailable", event.target.value)}
           />
         </label>
         <label className="field">
           <span>Rideshare party cap</span>
           <input
-            min="2"
+            disabled={rideshareCapDisabled}
+            min="0"
             max="6"
             type="number"
-            value={form.maxPartySize}
+            value={rideshareCapDisabled ? 0 : form.maxPartySize}
             onChange={(event) => onFieldChange("maxPartySize", event.target.value)}
           />
         </label>
