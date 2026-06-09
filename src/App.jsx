@@ -584,7 +584,7 @@ function App() {
       setAppError(error.message);
       return;
     }
-    setAuthMessage("Check your email for a one-time code or sign-in link.");
+    setAuthMessage("Check your email for a secure sign-in link.");
   }
 
   async function verifyLoginCode(event) {
@@ -1124,7 +1124,7 @@ function AuthPanel({
     <section className="auth-panel">
       <div>
         <strong>Sign in to save your ride profile</strong>
-        <span>Use your email to get a one-time code. The sample board remains visible while signed out.</span>
+        <span>Use your email to get a secure sign-in link. The sample board remains visible while signed out.</span>
       </div>
       <form className="auth-form" onSubmit={onSendCode}>
         <label className="field">
@@ -1138,21 +1138,21 @@ function AuthPanel({
           />
         </label>
         <button className="primary-button" type="submit">
-          Send code
+          Send sign-in link
         </button>
       </form>
       <form className="auth-form" onSubmit={onVerifyCode}>
         <label className="field">
-          <span>One-time code</span>
+          <span>One-time code, if provided</span>
           <input
             inputMode="numeric"
             value={authCode}
             onChange={(event) => setAuthCode(event.target.value)}
-            placeholder="123456"
+            placeholder="Optional code"
           />
         </label>
         <button className="secondary-button" disabled={!authCode} type="submit">
-          Verify
+          Verify code
         </button>
       </form>
       {authMessage && <p className="success-text">{authMessage}</p>}
