@@ -59,16 +59,22 @@ export function fromDbGroup(row, memberships = [], inquiries = []) {
   };
 }
 
-export function toDbGroup(group) {
-  return {
+export function toDbGroup(group, options = {}) {
+  const { includeStatus = true } = options;
+  const dbGroup = {
     host_participant_id: group.hostId,
     type: group.type,
     corridor: group.corridor,
     route_flexibility: group.routeFlexibility,
     capacity: Number(group.capacity || 1),
-    status: group.status || "open",
     availability: toDbAvailability(group.availability),
   };
+
+  if (includeStatus) {
+    dbGroup.status = group.status || "open";
+  }
+
+  return dbGroup;
 }
 
 export async function fetchSupabaseBoard() {
@@ -127,11 +133,13 @@ export async function saveParticipantWithGroups(participant, userId, groupsToCre
     toDbGroup({
       ...group,
       hostId: savedParticipant.id,
-    }),
+    }, { includeStatus: false }),
   );
 
   if (rideGroups.length) {
-    const { error: groupError } = await supabase.from("ride_groups").insert(rideGroups);
+    const { error: groupError } = await supabase
+      .from("ride_groups")
+      .upsert(rideGroups, { onConflict: "host_participant_id,type" });
     if (groupError) throw groupError;
   }
 
