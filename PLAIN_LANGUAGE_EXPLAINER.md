@@ -8,7 +8,7 @@ A spreadsheet can tell you that Maya is offering two seats and Jon needs a ride.
 
 Think of it less like a signup form and more like a connection board for conference commuting.
 
-The current app is the intentionally calmer version of the ride connection idea. The richer dashboard still informed the model, but this version asks users to do two main things: describe their ride plan, then review likely matches. It grew out of a stakeholder question: "What would this look like if we made the interface much simpler?"
+The current app is the intentionally calmer version of the ride connection idea. Earlier design work still informed the model, but this version asks users to do two main things: describe their ride plan, then review likely matches. It grew out of a stakeholder question: "What would this look like if we made the interface much simpler?"
 
 People are not just entries. They are moving parts:
 
@@ -29,9 +29,9 @@ First, it lets an attendee submit one ride profile. They can enter their name, c
 
 Second, it displays active ride options. These are shown as ride cards. A card might represent a driver carpool, where a person has a car and a fixed number of carpool seats. It might represent a carpool request, where someone needs a seat. Or it might represent a shared rideshare pool, where people are trying to split an Uber or Lyft.
 
-Third, it helps users judge fit. The app scores potential matches based on timing, route corridor, ride type, status, and capacity. A good match appears higher. A bad match, such as a driver having to make a major detour, gets pushed lower.
+Third, it helps users judge fit. The app scores potential matches internally based on timing, route corridor, ride type, status, and capacity, then shows plain categories such as `Strong match` or `Possible match`. A good match appears higher. A bad match, such as a driver having to make a major detour, gets pushed lower.
 
-Fourth, it supports a more careful coordination flow. A user can inquire or offer help, but they cannot simply force themselves into someone else's ride. A final match should happen only after the people involved contact each other and agree.
+Fourth, it supports a more careful coordination flow. A user can reveal email or phone details, contact the other person outside the app, and then record that contact or help offer. They cannot simply force themselves into someone else's ride. A final match should happen only after the people involved contact each other and agree.
 
 The app now has two operating modes.
 
@@ -326,7 +326,7 @@ That is how shared time slots are found.
 
 ## Corridors: A Practical Substitute For Maps
 
-The app does not use a maps API yet. Instead, it uses a list of corridors with labels, route notes, colors, and rough screen positions.
+The app does not use a maps API yet. Instead, it uses a list of corridors with labels, route notes, and adjacency rules.
 
 Example:
 
@@ -336,16 +336,13 @@ Example:
   label: "Arlington / Alexandria",
   short: "Arl/Alex",
   region: "VA",
-  route: "GW Parkway / I-395 / Wilson Bridge",
-  x: 34,
-  y: 55,
-  tone: "orange"
+  route: "GW Parkway / I-395 / Wilson Bridge"
 }
 ```
 
-The `x` and `y` values place the corridor on the simple visual map. They are percentages, not real coordinates.
+The current app communicates route fit through match categories, route labels, and sorted cards.
 
-This is a good example of a prototype doing enough without pretending to be final. The visual map gives users a mental model of the region. It does not claim to calculate exact travel time.
+This is a good example of a prototype doing enough without pretending to be final. The corridor model gives users a mental model of the region. It does not claim to calculate exact travel time.
 
 ## Corridor Adjacency
 
@@ -358,7 +355,7 @@ const corridorAdjacency = {
 }
 ```
 
-This is the app's simple version of route intelligence.
+This is the app's current lightweight version of route intelligence.
 
 If two people are in the same corridor, the match is strong. If they are in adjacent corridors, the match is still plausible. If they are far apart, the match gets weaker.
 
@@ -463,7 +460,7 @@ That `+ 1` is easy to miss, but it matters. It prevents the app from acting like
 
 The app still uses browser local storage when no Supabase session is active.
 
-That means a signed-out demo can add someone, mark an inquiry, or mark a match, and those demo changes stay in that browser after a page refresh.
+That means a signed-out demo can add someone, record contact or help offered, or mark a match, and those demo changes stay in that browser after a page refresh.
 
 Local storage is like a notebook taped to your own laptop. It is useful while you are working, but nobody else can see it.
 
@@ -524,7 +521,7 @@ The main database tables are:
 - `participant_directory`: a public-safe directory table that exposes only the fields needed for matching.
 - `ride_groups`: carpool and Uber/Lyft split groups.
 - `ride_memberships`: final matched riders.
-- `ride_inquiries`: people who have asked about a ride or offered help but are not matched yet.
+- `ride_inquiries`: the internal contact/help markers for people who have reached out but are not matched yet.
 - `admin_users`: the list of auth users who are allowed to become admins.
 
 The `participant_directory` table is worth calling out. Earlier, this was modeled as a view. The safer version is a real table with row-level security. A trigger keeps it synchronized with `participants`, but it does not expose private fields like phone numbers to every signed-in user.
@@ -566,7 +563,7 @@ The app uses a few Supabase RPC functions:
 - `request_join_ride`
 - `commit_to_ride`
 
-Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can ask about a ride or record an agreed match.
+Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can record contact/help or record an agreed match.
 
 The `commit_to_ride` name is now a little historical. In the simple interface, the user-facing action is "mark matched." The RPC keeps the older name, but it now requires a prior contact marker and checks who is allowed to mark the match:
 
@@ -583,9 +580,13 @@ The app is made from components. A component is a chunk of interface plus the lo
 The main components are:
 
 - `App`
+- `AuthPanel`
+- `BoardControls`
 - `EntryForm`
+- `PlanSummary`
+- `PrototypePreviewTools`
 - `RideCard`
-- `ParticipantSummary`
+- `FitLegend`
 - `ScorePill`
 - `StatusBadge`
 - `Stat`
@@ -599,7 +600,7 @@ For example, `RideCard` receives:
 - The group to display.
 - The participant list so it can look up names.
 - The selected participant so it can calculate actions.
-- The match score.
+- The match category and route fit details.
 - Functions for direct-contact markers, match recording, and status changes.
 
 This is called passing props.
@@ -656,9 +657,9 @@ The design is meant to feel like a practical coordination board, not a marketing
 
 There is no giant hero section. There is no decorative pitch copy. The first screen is the actual tool.
 
-The first version put almost everything on one dashboard. It worked, but it felt busy. That was useful feedback: the app was doing the right things, but it was asking users to absorb too much at once.
+The first version put too much information on one screen. It worked, but it felt busy. That was useful feedback: the app was doing the right things, but it was asking users to absorb too much at once.
 
-An earlier fuller version explored a tabbed dashboard. The current app deliberately steps back from that and uses two main areas:
+The current app deliberately steps back from that and uses two main areas:
 
 - `Your plan`: enter or update the one ride profile tied to the user.
 - `Likely matches`: browse the best open carpool offers, carpool requests, and Uber/Lyft split groups.
@@ -683,7 +684,7 @@ The app uses cards for individual rides, which makes sense because each ride is 
 
 The current app keeps each ride card summary-first. The card shows the ride type, route area, trip slots, capacity, contact buttons, and next action immediately. Longer notes and contact/match history live behind `Details and history`, which keeps the board from feeling like every card is shouting at once.
 
-The app avoids nested cards and keeps the main dashboard organized with clear panels.
+The app avoids nested cards and keeps the main board organized with clear panels.
 
 ## `styles.css`: The Wardrobe And Stage Lighting
 
@@ -692,13 +693,13 @@ The CSS file controls layout, color, spacing, responsive behavior, and visual st
 Some important choices:
 
 - CSS variables define colors and reusable values.
-- The top bar stays sticky so the app identity and stats remain visible.
+- The hero stats use passive metric styling so they do not look like buttons.
 - The workspace uses CSS grid for a responsive two-column desktop layout.
 - Media queries collapse the layout on smaller screens.
 - Buttons, inputs, and cards have stable sizes so the layout does not jump around.
 - Status colors help users quickly read whether a ride is open, pending, matched, or full.
 
-The separate route map is not part of the simplified first screen. The corridor model is still in the matching logic, but the user sees it through fit labels and match ordering rather than a separate map panel.
+The corridor model is still in the matching logic, but the user sees it through match categories, route labels, and match ordering.
 
 ## Icons
 
@@ -855,7 +856,7 @@ The app has admin troubleshooting features, such as previewing matches from anot
 
 Those tools are useful for support, but they should not be available to every signed-in user.
 
-The database now requires admin membership plus MFA verification before granting admin-level RLS access. The UI mirrors that by showing an admin MFA panel to admin accounts.
+The database now requires admin membership plus MFA verification before granting admin-level RLS access. The UI mirrors that by showing an admin MFA panel to admin accounts and only showing the signed-in participant switcher after MFA is verified.
 
 Lesson: admin tools are powerful because they cross normal user boundaries. Treat them like a locked maintenance room, not like a hidden menu item.
 
@@ -925,27 +926,19 @@ Lesson: responsive design bugs are often layout negotiation bugs. The content is
 
 Best practice: always inspect screenshots at real viewport sizes. A layout can pass a build and still look bad.
 
-## Issue 4: Narrow Buttons Truncated Text
+## Issue 4: Action Labels Needed To Match The Real Workflow
 
-Some action buttons had labels that were too long for their available width.
+Some early action buttons were too long and also implied the app was doing more than it really was.
 
-For example:
-
-```text
-Mark inquiry
-Commit rider
-```
-
-These were shortened to:
+The final labels are:
 
 ```text
-Inquire
-Commit
+Record contact
+Record help offer
+Mark matched
 ```
 
-The current app later changed the user-facing final action again to "Mark matched," because that better reflects the new rule that people should talk first and only record the match afterward.
-
-It also changed "Inquire" into "Record contact" or "Record help offer." That is a more honest label when the app is not sending automated email, and it makes clear that the button records something the user did outside the app.
+That wording is more honest. The app is not sending automated email. It lets people reveal contact details, coordinate outside the app, and then record what happened.
 
 The meaning stayed clear, and the layout became cleaner.
 
@@ -1097,7 +1090,7 @@ The fix included frontend and database logic:
 - Mark that contact or a help offer happened.
 - Disable match actions until the contact marker exists.
 - Let carpool drivers finalize their own carpool matches.
-- Let Uber/Lyft organizers or inquirers mark a match after contact.
+- Let Uber/Lyft organizers or contacted participants mark a match after contact.
 - Keep `Matched` out of the ordinary status dropdown for unmatched posts, so people do not skip the contact-first path.
 - Keep sign-in, profile editing, prototype preview tools, card history, and owner-only status controls out of the way until they are needed.
 
@@ -1202,7 +1195,7 @@ How to avoid trouble:
 - Let people copy or use the revealed details outside the app.
 - Let users choose what to share.
 - Add organizer moderation.
-- Consider using inquiry messages instead of direct contact display.
+- Consider using built-in contact request messages instead of direct contact display.
 
 ## Pitfall: Status Can Drift From Reality
 
@@ -1212,7 +1205,7 @@ How to avoid trouble:
 
 - Add update reminders.
 - Add expiration dates.
-- Let hosts confirm or reject inquiries.
+- Let hosts confirm or reject contact requests.
 - Keep a visible "last updated" timestamp.
 
 ## Pitfall: Matching Scores Can Look More Precise Than They Are
@@ -1255,7 +1248,7 @@ React is especially good when the interface has many parts that all depend on th
 - The stats in the header depend on the groups and participants.
 - The ride cards depend on the groups and participants.
 - The best-fit list depends on the selected participant.
-- The map depends on active groups by corridor.
+- The match categories and route labels depend on the groups and participant corridors.
 
 One data change can update several parts of the screen.
 
@@ -1376,7 +1369,7 @@ attendee fills form
   -> signed-out mode saves to localStorage
   -> signed-in mode saves to Supabase
   -> ride board re-renders
-  -> match scores update
+  -> match rankings and categories update
   -> stats update
 ```
 
@@ -1539,7 +1532,7 @@ The database also includes triggers and helper functions:
 
 - To keep `participant_directory` synced.
 - To calculate open spots.
-- To request rides and mark agreed matches through controlled RPCs.
+- To record contact/help and mark agreed matches through controlled RPCs.
 - To enforce admin access only after MFA.
 
 ## The Most Important Product Lesson
@@ -1662,7 +1655,7 @@ Do not skip visual inspection. Front-end bugs often live in the space between "t
 
 `riderIds`: Participants who have been matched into a group. In the database this is still stored through `ride_memberships`.
 
-`inquiries`: The internal database name for participants who have marked contact or offered help but are not matched yet.
+`inquiries`: The internal database name for participants who have marked contact or offered help but are not matched yet. In the UI, these are presented as contact/help markers.
 
 `corridor`: A regional route bucket, such as DC Northwest or Arlington/Alexandria.
 
@@ -1688,7 +1681,7 @@ Do not skip visual inspection. Front-end bugs often live in the space between "t
 
 This app is a practical first version of a real coordination tool, now backed by Supabase for shared signed-in use.
 
-It turns a spreadsheet into something more useful by understanding the shape of the problem: people, routes, time slots, seats, capacity, inquiries, and matches.
+It turns a spreadsheet into something more useful by understanding the shape of the problem: people, routes, time slots, seats, capacity, contact markers, and matches.
 
 The current version is intentionally modest. It does not try to solve everything. It solves the core matching, status, auth, and shared-data problem clearly enough that the next technical decisions can be made with better information.
 

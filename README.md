@@ -16,7 +16,7 @@ The workflow rules are:
 - Carpool drivers can mark final matches for their own carpool offers.
 - For carpool requests, a potential helper must mark that they offered help before the request can be marked matched.
 - For Uber/Lyft split groups, either the organizer or the contacted participant can mark the group matched after contact is recorded.
-- The database still stores `committed` as the final status value, but the simple UI presents that state as `matched`.
+- The database still stores `committed` as the final status value, but the current UI presents that state as `matched`.
 
 ## Core Data Model
 
@@ -25,7 +25,7 @@ The workflow rules are:
 - `name`, `email`, `phone`
 - `neighborhood`
 - `corridor`: regional route zone such as `dc-nw`, `dc-ne`, `arlington-alexandria`, `silver-spring-takoma`, `bethesda-rockville`, `pg-county`, `fairfax-falls-church`
-- `intent`: `offer`, `need-seat`, `split-rideshare`, `offer-or-split`, or `need-or-split`
+- `intent`: `offer`, `need-seat`, `split-rideshare`, or `both`
 - `transportPreference`: `carpool`, `rideshare`, or `either`
 - `seatsAvailable`, `seatsNeeded`, and `maxPartySize`
 - `availability`: booleans for Thursday AM/PM, Friday AM/PM, Saturday AM/PM, Sunday AM/PM
@@ -41,11 +41,11 @@ The workflow rules are:
 - `capacity`
 - `status`: `open`, `pending`, `committed`, or `full`
 - `availability`
-- `inquiries`: participant IDs that have marked contact or offered help. This is an internal database name; the simple UI presents it as contact tracking.
+- `inquiries`: participant IDs that have marked contact or offered help. This is an internal database name; the current UI presents it as contact tracking.
 
 ## Matching Logic
 
-The prototype scores possible pairings using:
+The app scores possible pairings internally, then shows users plain categories such as `Strong match`, `Good match`, `Possible match`, or `Weak match`. The internal score uses:
 
 1. Shared trip slots.
 2. Regional corridor match.
@@ -70,6 +70,16 @@ If npm is configured for a private registry on your machine, install with a one-
 ```bash
 npm_config_registry=https://registry.npmjs.org/ npm install
 ```
+
+## Deployment
+
+Production is hosted on Vercel:
+
+```text
+https://ire-ride-connection-app.vercel.app
+```
+
+The Vercel project was created from the CLI and is not currently connected to the GitLab repository for automatic deploys. Deploy manually from this directory with `vercel --prod` only when a deployment has been explicitly requested.
 
 ## Supabase
 
@@ -96,7 +106,7 @@ Security checks:
 supabase db advisors --linked --type security --level info
 ```
 
-The app intentionally exposes three authenticated RPCs: `get_my_role`, `request_join_ride`, and `commit_to_ride`. `request_join_ride` records that contact/help was initiated, while `commit_to_ride` requires that prior contact marker and enforces the simple-version match rules. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
+The app intentionally exposes three authenticated RPCs: `get_my_role`, `request_join_ride`, and `commit_to_ride`. `request_join_ride` records that contact/help was initiated, while `commit_to_ride` requires that prior contact marker and enforces the contact-first match rules. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
 
 Regular users sign in by email one-time code. The hosted Supabase email template has been updated through the Management API to send `{{ .Token }}` instead of a magic sign-in link.
 
@@ -115,7 +125,7 @@ insert into public.admin_users (user_id)
 values ('00000000-0000-0000-0000-000000000000');
 ```
 
-Admin users see the participant switcher and MFA setup panel. Regular signed-in users see only their own ride profile as the matching perspective.
+Admin users see the MFA setup/verification panel when signed in. After MFA is verified, admins can use the participant switcher for troubleshooting. Regular signed-in users see only their own ride profile as the matching perspective.
 
 Admin role and MFA behavior:
 
