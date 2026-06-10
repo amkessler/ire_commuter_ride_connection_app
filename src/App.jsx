@@ -1223,8 +1223,8 @@ function App() {
           ) : (
             <PlanSummary
               participant={planSummaryParticipant}
-              onEdit={openPlanEditor}
-              editLabel={session ? "Edit ride info" : "Add a sample profile"}
+              onEdit={session ? openPlanEditor : null}
+              editLabel={session ? "Edit ride info" : ""}
             />
           )}
         </section>
@@ -1373,8 +1373,8 @@ function AuthPanel({
         <strong>Sign in to save your ride profile</strong>
         <span>
           {isExpanded
-            ? "Use your email to get a one-time sign-in code. The sample board remains visible while signed out."
-            : "Optional. The sample board remains visible while signed out."}
+            ? "Use your email to get a one-time sign-in code. Sign in to create a real profile and see live postings."
+            : "Sign in to create a real profile and see live postings. Sample data is shown while signed out."}
         </span>
       </div>
       {!isExpanded && (
@@ -1741,9 +1741,11 @@ function PlanSummary({ editLabel, onEdit, participant }) {
         )}
       </div>
       {participant.notes && <p className="plan-summary-note">{participant.notes}</p>}
-      <button className="secondary-button" type="button" onClick={onEdit}>
-        {editLabel}
-      </button>
+      {onEdit && editLabel && (
+        <button className="secondary-button" type="button" onClick={onEdit}>
+          {editLabel}
+        </button>
+      )}
     </div>
   );
 }
