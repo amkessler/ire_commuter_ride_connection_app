@@ -1674,7 +1674,7 @@ function PrototypePreviewTools({
 }) {
   return (
     <details className="prototype-drawer">
-      <summary>{isSignedIn ? "Admin preview tools" : "Prototype preview tools"}</summary>
+      <summary>{isSignedIn ? "Admin preview tools" : "Sample preview tools"}</summary>
       <div>
         <label className="field preview-field">
           <span>Preview as</span>
