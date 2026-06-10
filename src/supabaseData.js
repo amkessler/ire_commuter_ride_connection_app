@@ -17,7 +17,7 @@ export function fromDbParticipant(row) {
     transportPreference: row.transport_preference,
     seatsNeeded: row.seats_needed ?? 1,
     seatsAvailable: row.seats_available ?? 0,
-    maxPartySize: row.max_party_size ?? 3,
+    maxPartySize: row.max_party_size ?? 0,
     availability: row.availability || {},
     notes: row.notes || "",
     isDirectoryOnly: !row.email,
@@ -36,7 +36,7 @@ export function toDbParticipant(participant, userId) {
     transport_preference: participant.transportPreference,
     seats_needed: Number(participant.seatsNeeded || 0),
     seats_available: Number(participant.seatsAvailable || 0),
-    max_party_size: Number(participant.maxPartySize || 3),
+    max_party_size: Number(participant.maxPartySize ?? 0),
     availability: toDbAvailability(participant.availability),
     notes: participant.notes || null,
   };

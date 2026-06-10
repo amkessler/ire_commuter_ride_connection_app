@@ -361,7 +361,7 @@ function loadInitialState() {
 function participantToForm(participant) {
   if (!participant) return blankForm;
 
-  return {
+  return normalizeRideModeFields({
     name: participant.name || "",
     email: participant.email || "",
     phone: participant.phone || "",
@@ -374,7 +374,7 @@ function participantToForm(participant) {
     maxPartySize: participant.maxPartySize ?? 3,
     availability: participant.availability || makeAvailability(["thuAm", "friAm"]),
     notes: participant.notes || "",
-  };
+  });
 }
 
 function ridePlanFromForm(formState) {
@@ -1704,6 +1704,7 @@ function PlanSummary({ editLabel, onEdit, participant }) {
   if (!participant) return null;
   const ridePlan = ridePlanFromForm(participant);
   const ridePlanHelp = getRidePlanHelp(ridePlan);
+  const normalizedParticipant = normalizeRideModeFields(participant);
 
   return (
     <div className="plan-summary">
@@ -1715,14 +1716,22 @@ function PlanSummary({ editLabel, onEdit, participant }) {
       </div>
       <p>{ridePlanHelp}</p>
       <div className="summary-chip-row">
-        <span>{formatSlots(participant.availability)}</span>
-        {participant.seatsAvailable > 0 && (
-          <span>{participant.seatsAvailable} {pluralize(participant.seatsAvailable, "carpool seat")} offered</span>
+        <span>{formatSlots(normalizedParticipant.availability)}</span>
+        {normalizedParticipant.seatsAvailable > 0 && (
+          <span>
+            {normalizedParticipant.seatsAvailable}{" "}
+            {pluralize(normalizedParticipant.seatsAvailable, "carpool seat")} offered
+          </span>
         )}
-        {participant.seatsNeeded > 0 && (
-          <span>{participant.seatsNeeded} {pluralize(participant.seatsNeeded, "carpool seat")} needed</span>
+        {normalizedParticipant.seatsNeeded > 0 && (
+          <span>
+            {normalizedParticipant.seatsNeeded}{" "}
+            {pluralize(normalizedParticipant.seatsNeeded, "carpool seat")} needed
+          </span>
         )}
-        {participant.maxPartySize > 0 && <span>Uber/Lyft group up to {participant.maxPartySize}</span>}
+        {normalizedParticipant.maxPartySize > 0 && (
+          <span>Uber/Lyft group up to {normalizedParticipant.maxPartySize}</span>
+        )}
       </div>
       {participant.notes && <p className="plan-summary-note">{participant.notes}</p>}
       <button className="secondary-button" type="button" onClick={onEdit}>
