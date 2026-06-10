@@ -1388,6 +1388,9 @@ function AuthPanel({
             <label className="field">
               <span>Account email</span>
               <input
+                autoComplete="email"
+                id="account-email"
+                name="email"
                 required
                 type="email"
                 value={authEmail}
