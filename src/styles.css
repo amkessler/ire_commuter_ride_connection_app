@@ -779,6 +779,11 @@ button:focus-visible {
 }
 
 .score-low {
+  background: #fff5d7;
+  color: #806014;
+}
+
+.score-weak {
   background: #f5ece6;
   color: #9b4e22;
 }

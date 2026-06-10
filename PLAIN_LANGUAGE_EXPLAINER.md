@@ -792,7 +792,14 @@ Lesson: collect the least precise data that still solves the immediate problem.
 
 ## Decision: Keep Matching Explainable
 
-The match score is visible as a simple "fit" number with labels like:
+The app keeps a match score internally for sorting, but shows users plain match categories instead of precise-looking numbers:
+
+- Strong match
+- Good match
+- Possible match
+- Weak match
+
+It also shows route explanation labels like:
 
 - Same corridor
 - Nearby route
@@ -1210,11 +1217,12 @@ How to avoid trouble:
 
 ## Pitfall: Matching Scores Can Look More Precise Than They Are
 
-A score like `87 fit` feels exact. But it is based on rough rules.
+An exact-looking score can feel more authoritative than it really is. But the current matching is based on rough rules, not live travel-time routing.
 
 How to avoid trouble:
 
-- Pair scores with plain labels like "Nearby route."
+- Show match categories such as "Strong match" or "Possible match" instead of exact numbers.
+- Pair those categories with route labels like "Nearby route."
 - Avoid implying the app knows exact travel time.
 - In future versions, show actual estimated detour if using a maps API.
 

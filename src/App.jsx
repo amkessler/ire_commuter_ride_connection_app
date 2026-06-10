@@ -643,6 +643,13 @@ function scoreGroupForParticipant(group, participant) {
   };
 }
 
+function matchCategory(score) {
+  if (score >= 80) return { label: "Strong match", level: "high" };
+  if (score >= 55) return { label: "Good match", level: "medium" };
+  if (score >= 30) return { label: "Possible match", level: "low" };
+  return { label: "Weak match", level: "weak" };
+}
+
 function App() {
   const [state, setState] = useState(loadInitialState);
   const [form, setForm] = useState(blankForm);
@@ -1270,7 +1277,7 @@ function App() {
                 const groupMeta = getGroupTypeMeta(group.type);
                 return (
                   <span key={group.id}>
-                    {groupMeta.title}: {host?.neighborhood || "neighborhood pending"} · {Math.max(match.score, 0)} route fit
+                    {groupMeta.title}: {host?.neighborhood || "neighborhood pending"} · {matchCategory(match.score).label}
                   </span>
                 );
               })}
@@ -2137,8 +2144,8 @@ function RideCard({
 }
 
 function ScorePill({ match }) {
-  const level = match.score >= 80 ? "high" : match.score >= 55 ? "medium" : "low";
-  return <span className={`score-pill score-${level}`}>{Math.max(match.score, 0)} route fit</span>;
+  const category = matchCategory(match.score);
+  return <span className={`score-pill score-${category.level}`}>{category.label}</span>;
 }
 
 function StatusBadge({ status }) {
