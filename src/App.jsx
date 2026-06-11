@@ -1321,16 +1321,24 @@ function App() {
     const group = groups.find((item) => item.id === groupId);
     const host = participants.find((participant) => participant.id === group?.hostId);
     if (!group || !host) return;
-    const alreadyMatchedSlotIds = getMatchedSlotIds(group, selectedParticipant.id);
-    const eligibleSlotIds = getSharedOpenSlotIds(group, selectedParticipant).filter(
-      (slotId) => !alreadyMatchedSlotIds.includes(slotId),
+    const sharedOpenSlotIds = getSharedOpenSlotIds(group, selectedParticipant);
+    const directMatchedSlotIds = getMatchedSlotIds(group, selectedParticipant.id);
+    const pairMatchedSlotIds = getParticipantPairMatchedSlotIds(selectedParticipant.id, host.id, groups);
+    const alreadyMatchedSlotIds = new Set([...directMatchedSlotIds, ...pairMatchedSlotIds]);
+    const eligibleSlotIds = sharedOpenSlotIds.filter(
+      (slotId) => !alreadyMatchedSlotIds.has(slotId),
     );
     const currentInterestSlotIds = getInquirySlotIds(group, selectedParticipant.id).filter((slotId) =>
       eligibleSlotIds.includes(slotId),
     );
 
-    if (!eligibleSlotIds.length) {
+    if (!sharedOpenSlotIds.length) {
       setAppError("No shared open conference slots are available for this post.");
+      return;
+    }
+
+    if (!eligibleSlotIds.length) {
+      setAppError("All shared open conference slots are already matched with this person.");
       return;
     }
 
@@ -1339,7 +1347,9 @@ function App() {
       groupId,
       participantId: selectedParticipant.id,
       title: `Record interest in ${host.name}'s ${getGroupTypeMeta(group.type).title.toLowerCase()}`,
-      description: "Choose only the conference trip slots you actually want to discuss.",
+      description: currentInterestSlotIds.length
+        ? "Update only the pending conference trip slots you still want to discuss."
+        : "Choose only the conference trip slots you actually want to discuss.",
       slotIds: eligibleSlotIds,
       selectedSlotIds: currentInterestSlotIds.length ? currentInterestSlotIds : eligibleSlotIds,
       submitLabel: currentInterestSlotIds.length ? "Update interest" : "Record interest",
@@ -3019,7 +3029,9 @@ function RideCard({
           sharedSlotIds.includes(slotId),
         )
       : [];
-  const visibleMatchedSlotIds = directMatchedSlotIds.length ? directMatchedSlotIds : pairMatchedSlotIds;
+  const visibleMatchedSlotIds = sharedSlotIds.filter(
+    (slotId) => directMatchedSlotIds.includes(slotId) || pairMatchedSlotIds.includes(slotId),
+  );
   const visibleMatchedSlotsText = formatSlotIds(visibleMatchedSlotIds);
   const visibleMatchedSlotsSummary = formatSlotSummary(visibleMatchedSlotIds);
   const hasMatchedSlotContext = visibleMatchedSlotIds.length > 0;
@@ -3032,7 +3044,7 @@ function RideCard({
   const unmatchedSharedSlotsText = formatSlotIds(unmatchedSharedSlotIds);
   const pendingSlotsSummary = formatSlotSummary(pendingSlotIds);
   const interestEligibleSlotIds = sharedSlotIds.filter(
-    (slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0 && !directMatchedSlotIds.includes(slotId),
+    (slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0 && !visibleMatchedSlotIds.includes(slotId),
   );
   const matchedStatusText = visibleMatchedSlotsText
     ? `Matched for ${visibleMatchedSlotsSummary}`
@@ -3047,13 +3059,23 @@ function RideCard({
         : [],
     ]),
   );
-  const canInquire =
+  const canActOnGroup = selectedParticipant && canParticipantActOnGroup(selectedParticipant, group);
+  const canStartInterest =
     selectedParticipant &&
     !isHost &&
     !alreadyInquired &&
     status !== "full" &&
     interestEligibleSlotIds.length > 0 &&
-    canParticipantActOnGroup(selectedParticipant, group);
+    canActOnGroup;
+  const canUpdateInterest =
+    selectedParticipant &&
+    !isHost &&
+    alreadyInquired &&
+    pendingSlotIds.length > 0 &&
+    status !== "full" &&
+    interestEligibleSlotIds.length > 0 &&
+    canActOnGroup;
+  const canInquire = canStartInterest;
   const hasContactMethod = Boolean(host?.email || host?.phone);
   const hasRevealedContact = revealedContacts.email || revealedContacts.phone;
   const canRecordContact = canInquire && hasRevealedContact;
@@ -3289,6 +3311,11 @@ function RideCard({
           <button className="secondary-button" type="button" onClick={() => onInquire(group.id)}>
             <CircleAlert size={15} aria-hidden="true" />
             {groupMeta.inquireLabel}
+          </button>
+        ) : canUpdateInterest ? (
+          <button className="secondary-button" type="button" onClick={() => onInquire(group.id)}>
+            <CircleAlert size={15} aria-hidden="true" />
+            Update interest
           </button>
         ) : (
           <span className={`action-status${showsMatchedState ? " is-matched" : ""}`}>
