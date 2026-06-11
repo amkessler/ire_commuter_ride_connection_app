@@ -1350,6 +1350,12 @@ button:focus-visible {
   background: #f7f4ea;
 }
 
+.plan-summary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .simple-board {
   display: grid;
   gap: 14px;
@@ -1821,6 +1827,10 @@ button:focus-visible {
   }
 
   .auth-expanded-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-summary-actions {
     grid-template-columns: 1fr;
   }
 

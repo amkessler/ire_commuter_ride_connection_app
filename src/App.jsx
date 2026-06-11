@@ -12,6 +12,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Trash2,
   UserPlus,
   Users,
   X,
@@ -19,6 +20,7 @@ import {
 import { hasSupabaseConfig, supabase } from "./supabaseClient";
 import {
   commitToRide,
+  deleteParticipant,
   fetchSupabaseBoard,
   requestJoinRide,
   saveGroupStatus,
@@ -1192,6 +1194,30 @@ function App() {
     setIsPlanEditorOpen(true);
   }
 
+  async function removeRidePost() {
+    if (!session || !supabase || !ownParticipant) return;
+    const confirmed = window.confirm(
+      "Remove your ride post? This will take your profile and hosted ride posts off the board.",
+    );
+    if (!confirmed) return;
+
+    setIsSyncing(true);
+    setAppError("");
+    setRideInfoMessage("");
+    try {
+      await deleteParticipant(ownParticipant.id);
+      setForm(blankForm);
+      setSelectedParticipantId("");
+      await loadRemoteBoard(session);
+      setRideInfoMessage("Your ride post was removed.");
+      setIsPlanEditorOpen(true);
+    } catch (error) {
+      setAppError(error.message || "Unable to remove your ride post.");
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
   return (
     <div className="app simple-app">
       <header className="simple-hero">
@@ -1260,6 +1286,8 @@ function App() {
             <PlanSummary
               participant={planSummaryParticipant}
               onEdit={session ? openPlanEditor : null}
+              onRemove={session && ownParticipant ? removeRidePost : null}
+              isRemoving={isSyncing}
               editLabel={session ? "Edit ride info" : ""}
             />
           )}
@@ -1862,7 +1890,7 @@ function FitLegend() {
   );
 }
 
-function PlanSummary({ editLabel, onEdit, participant }) {
+function PlanSummary({ editLabel, isRemoving = false, onEdit, onRemove, participant }) {
   if (!participant) return null;
   const ridePlan = ridePlanFromForm(participant);
   const ridePlanHelp = getRidePlanHelp(ridePlan);
@@ -1896,10 +1924,25 @@ function PlanSummary({ editLabel, onEdit, participant }) {
         )}
       </div>
       {participant.notes && <p className="plan-summary-note">{participant.notes}</p>}
-      {onEdit && editLabel && (
-        <button className="secondary-button" type="button" onClick={onEdit}>
-          {editLabel}
-        </button>
+      {(onEdit || onRemove) && (
+        <div className="plan-summary-actions">
+          {onEdit && editLabel && (
+            <button className="secondary-button" type="button" onClick={onEdit}>
+              {editLabel}
+            </button>
+          )}
+          {onRemove && (
+            <button
+              className="secondary-button sample-return-button"
+              disabled={isRemoving}
+              type="button"
+              onClick={onRemove}
+            >
+              <Trash2 size={15} aria-hidden="true" />
+              {isRemoving ? "Removing..." : "Remove my post"}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -2054,6 +2097,10 @@ function EntryForm({
           placeholder="Pickup constraints, preferred meetups, timing, accessibility notes..."
         />
       </label>
+      <p className="plan-note">
+        Notes are visible to signed-in users on matching ride cards. Keep anything private out of
+        this field.
+      </p>
 
       <button className="primary-button" disabled={isSaving} type="submit">
         <Plus size={16} aria-hidden="true" />

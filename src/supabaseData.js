@@ -167,6 +167,12 @@ export async function saveGroupStatus(groupId, status) {
   if (error) throw error;
 }
 
+export async function deleteParticipant(participantId) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { error } = await supabase.from("participants").delete().eq("id", participantId);
+  if (error) throw error;
+}
+
 export async function requestJoinRide(groupId, participantId) {
   if (!supabase) throw new Error("Supabase is not configured.");
   const { error } = await supabase.rpc("request_join_ride", {
