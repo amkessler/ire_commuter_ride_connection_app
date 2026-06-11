@@ -731,6 +731,85 @@ function downloadCsv(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
+function getRideCardElementId(groupId) {
+  return `ride-card-${groupId}`;
+}
+
+function buildRideActivity(participant, groups, participants) {
+  const participantMap = new Map(participants.map((item) => [item.id, item]));
+  const incoming = [];
+  const outgoing = [];
+  const matched = [];
+
+  if (!participant) {
+    return { incoming, outgoing, matched };
+  }
+
+  groups.forEach((group) => {
+    const host = participantMap.get(group.hostId);
+    const groupMeta = getGroupTypeMeta(group.type);
+    const status = effectiveStatus(group);
+    const statusLabel = status === "committed" ? "matched" : status;
+    const subtitle = `${groupMeta.title} · ${statusLabel}`;
+
+    if (group.hostId === participant.id) {
+      group.inquiries.forEach((inquiryId) => {
+        const person = participantMap.get(inquiryId);
+        if (!person) return;
+        if (group.riderIds.includes(person.id)) return;
+        incoming.push({
+          id: `incoming-${group.id}-${person.id}`,
+          groupId: group.id,
+          participantId: person.id,
+          title: `${person.name} ${group.type === "carpool-request" ? "offered help" : "recorded contact"}`,
+          subtitle,
+          tag: "Pending",
+          canMarkMatch: group.type !== "carpool-request" && status !== "full",
+        });
+      });
+
+      group.riderIds.forEach((riderId) => {
+        const person = participantMap.get(riderId);
+        if (!person) return;
+        matched.push({
+          id: `hosted-match-${group.id}-${person.id}`,
+          groupId: group.id,
+          participantId: person.id,
+          title: `Matched with ${person.name}`,
+          subtitle: groupMeta.title,
+          tag: "Matched",
+        });
+      });
+      return;
+    }
+
+    if (group.inquiries.includes(participant.id) && !group.riderIds.includes(participant.id)) {
+      outgoing.push({
+        id: `outgoing-${group.id}-${participant.id}`,
+        groupId: group.id,
+        participantId: participant.id,
+        title: `You contacted ${host?.name || "Unknown post"}`,
+        subtitle: `${groupMeta.title} · ${groupMeta.inquiredLabel}`,
+        tag: "Pending",
+        canMarkMatch: status !== "full" && (group.type === "rideshare" || group.type === "carpool-request"),
+      });
+    }
+
+    if (group.riderIds.includes(participant.id)) {
+      matched.push({
+        id: `joined-match-${group.id}-${participant.id}`,
+        groupId: group.id,
+        participantId: participant.id,
+        title: `Matched with ${host?.name || "Unknown post"}`,
+        subtitle: groupMeta.title,
+        tag: "Matched",
+      });
+    }
+  });
+
+  return { incoming, outgoing, matched };
+}
+
 function App() {
   const [state, setState] = useState(loadInitialState);
   const [form, setForm] = useState(blankForm);
@@ -752,6 +831,7 @@ function App() {
   const [isPlanEditorOpen, setIsPlanEditorOpen] = useState(false);
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
   const [adminActivity, setAdminActivity] = useState([]);
+  const [highlightedGroupId, setHighlightedGroupId] = useState("");
   const boardRequestId = useRef(0);
 
   const { participants, groups } = state;
@@ -1297,6 +1377,11 @@ function App() {
     );
   }, [groups, participants]);
 
+  const rideActivity = useMemo(
+    () => buildRideActivity(ownParticipant, groups, participants),
+    [groups, ownParticipant, participants],
+  );
+
   const canSwitchParticipant = !session || hasAdminAccess;
   const planSummaryParticipant = ownParticipant || (!session ? selectedParticipant : null);
   const showPlanEditor = isPlanEditorOpen || !planSummaryParticipant;
@@ -1403,6 +1488,25 @@ function App() {
     downloadCsv(`ire-ride-posts-${dateSlug}.csv`, rows);
   }
 
+  function focusRideCard(groupId) {
+    setQuery("");
+    setCorridorFilter("all");
+    setStatusFilter("all");
+    setAdminPostFilter("all");
+    setHighlightedGroupId(groupId);
+
+    window.setTimeout(() => {
+      document.getElementById(getRideCardElementId(groupId))?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
+
+    window.setTimeout(() => {
+      setHighlightedGroupId((currentGroupId) => (currentGroupId === groupId ? "" : currentGroupId));
+    }, 2200);
+  }
+
   return (
     <div className="app simple-app">
       <header className="simple-hero">
@@ -1443,42 +1547,53 @@ function App() {
       />
 
       <main className="simple-shell">
-        <section className="simple-panel simple-profile">
-          <div className="simple-section-heading">
-            <span className="step-badge">1</span>
-            <div>
-              <p className="eyebrow">Your plan</p>
-              <h2>
-                {showPlanEditor
-                  ? ownParticipant
-                    ? "Update your ride info"
-                    : "Add your ride info"
-                  : session
-                    ? "Your saved ride info"
-                    : "Previewed ride plan (sample)"}
-              </h2>
+        <div className="simple-left-column">
+          <section className="simple-panel simple-profile">
+            <div className="simple-section-heading">
+              <span className="step-badge">1</span>
+              <div>
+                <p className="eyebrow">Your plan</p>
+                <h2>
+                  {showPlanEditor
+                    ? ownParticipant
+                      ? "Update your ride info"
+                      : "Add your ride info"
+                    : session
+                      ? "Your saved ride info"
+                      : "Previewed ride plan (sample)"}
+                </h2>
+              </div>
             </div>
-          </div>
-          {showPlanEditor ? (
-            <EntryForm
-              form={form}
-              onSubmit={handleSubmit}
-              onFieldChange={updateFormField}
-              onAvailabilityChange={updateAvailability}
-              isSaving={isSyncing}
-              saveMessage={rideInfoMessage}
-              submitLabel={ownParticipant ? "Save ride info" : "Post ride info"}
-            />
-          ) : (
-            <PlanSummary
-              participant={planSummaryParticipant}
-              onEdit={session ? openPlanEditor : null}
-              onRemove={session && ownParticipant ? removeRidePost : null}
-              isRemoving={isSyncing}
-              editLabel={session ? "Edit ride info" : ""}
+            {showPlanEditor ? (
+              <EntryForm
+                form={form}
+                onSubmit={handleSubmit}
+                onFieldChange={updateFormField}
+                onAvailabilityChange={updateAvailability}
+                isSaving={isSyncing}
+                saveMessage={rideInfoMessage}
+                submitLabel={ownParticipant ? "Save ride info" : "Post ride info"}
+              />
+            ) : (
+              <PlanSummary
+                participant={planSummaryParticipant}
+                onEdit={session ? openPlanEditor : null}
+                onRemove={session && ownParticipant ? removeRidePost : null}
+                isRemoving={isSyncing}
+                editLabel={session ? "Edit ride info" : ""}
+              />
+            )}
+          </section>
+
+          {session && ownParticipant && !showPlanEditor && (
+            <RideActivityPanel
+              activity={rideActivity}
+              isSyncing={isSyncing}
+              onMarkMatched={(groupId, participantId) => commit(groupId, participantId)}
+              onViewGroup={focusRideCard}
             />
           )}
-        </section>
+        </div>
 
         <section className="simple-panel simple-board">
           <div className="simple-board-top">
@@ -1562,6 +1677,7 @@ function App() {
                   onStatusChange={(status) => updateGroup(group.id, { status })}
                   isAdmin={hasAdminAccess}
                   isSyncing={isSyncing}
+                  isHighlighted={highlightedGroupId === group.id}
                   canManageStatus={
                     hasAdminAccess ||
                     group.hostId === (session ? ownParticipant?.id : selectedParticipant?.id)
@@ -2293,6 +2409,97 @@ function PlanSummary({ editLabel, isRemoving = false, onEdit, onRemove, particip
   );
 }
 
+function RideActivityPanel({ activity, isSyncing, onMarkMatched, onViewGroup }) {
+  const totalCount = activity.incoming.length + activity.outgoing.length + activity.matched.length;
+
+  return (
+    <section className="simple-panel ride-activity-panel" aria-label="Your ride activity">
+      <div className="ride-activity-header">
+        <div>
+          <p className="eyebrow">Your activity</p>
+          <h2>Your ride activity</h2>
+          <p>Track contacts and matches without scanning every post.</p>
+        </div>
+        <span className="activity-count">
+          {totalCount} {pluralize(totalCount, "item")}
+        </span>
+      </div>
+
+      <div className="ride-activity-sections">
+        <RideActivitySection
+          emptyText="No one has recorded contact with your posts yet."
+          isSyncing={isSyncing}
+          items={activity.incoming}
+          onMarkMatched={onMarkMatched}
+          onViewGroup={onViewGroup}
+          title="Needs attention"
+        />
+        <RideActivitySection
+          emptyText="No outgoing contact recorded yet."
+          isSyncing={isSyncing}
+          items={activity.outgoing}
+          onMarkMatched={onMarkMatched}
+          onViewGroup={onViewGroup}
+          title="People you contacted"
+        />
+        <RideActivitySection
+          emptyText="No confirmed matches yet."
+          isSyncing={isSyncing}
+          items={activity.matched}
+          onMarkMatched={onMarkMatched}
+          onViewGroup={onViewGroup}
+          title="Confirmed matches"
+        />
+      </div>
+    </section>
+  );
+}
+
+function RideActivitySection({ emptyText, isSyncing, items, onMarkMatched, onViewGroup, title }) {
+  return (
+    <div className="ride-activity-section">
+      <div className="activity-section-heading">
+        <h3>{title}</h3>
+        <span>{items.length}</span>
+      </div>
+
+      {items.length ? (
+        <div className="activity-list">
+          {items.map((item) => (
+            <div className="activity-row" key={item.id}>
+              <div className="activity-row-main">
+                <strong>{item.title}</strong>
+                <span>{item.subtitle}</span>
+              </div>
+              <span className={`activity-tag ${item.tag === "Matched" ? "matched" : "pending"}`}>
+                {item.tag}
+              </span>
+              <div className="activity-actions">
+                <button className="text-button" type="button" onClick={() => onViewGroup(item.groupId)}>
+                  View
+                </button>
+                {item.canMarkMatch && (
+                  <button
+                    className="secondary-button activity-match-button"
+                    disabled={isSyncing}
+                    type="button"
+                    onClick={() => onMarkMatched(item.groupId, item.participantId)}
+                  >
+                    <CheckCircle2 size={14} aria-hidden="true" />
+                    Mark matched
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="activity-empty">{emptyText}</p>
+      )}
+    </div>
+  );
+}
+
 function EntryForm({
   form,
   isSaving,
@@ -2462,6 +2669,7 @@ function RideCard({
   canManageStatus = true,
   group,
   isAdmin = false,
+  isHighlighted = false,
   isSyncing = false,
   participants,
   selectedParticipant,
@@ -2557,7 +2765,10 @@ function RideCard({
   }
 
   return (
-    <article className={`ride-card status-${status}`}>
+    <article
+      id={getRideCardElementId(group.id)}
+      className={`ride-card status-${status}${isHighlighted ? " is-highlighted" : ""}`}
+    >
       <div className="ride-card-header">
         <div className="ride-type">
           <GroupIcon size={18} aria-hidden="true" />
