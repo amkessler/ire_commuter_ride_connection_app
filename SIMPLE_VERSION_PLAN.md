@@ -34,16 +34,16 @@ The primary interface stays focused on the ride profile, likely matches, filters
 - Keep status controls on cards so hosts/admins can still mark posts as open, pending, matched, or full. The database still stores the final match status as `committed`.
 - Require a contact marker before anyone can mark a match, so attendees contact each other first by email or phone and only record a match after mutual agreement.
 - Let carpool drivers finalize carpool matches. For Uber/Lyft split groups, let either the organizer or the contacted participant mark the match once contact has been recorded.
-- Do not send app-generated email notifications. The app relies on visible email/phone reveal controls and honest contact-tracking language instead of a transactional email provider.
+- Send one lightweight email notification when someone records contact/help on another person's post, so the post owner knows to sign in and review the possible match. The email should not include phone numbers or full ride details; users still coordinate directly after opening the app.
 - Keep `Matched` out of the ordinary status dropdown for unmatched posts; users should reach that state through `Mark matched`.
 - Hide post status controls from people who do not own the post unless they are admins.
 
-## No-Email Design Direction
+## Contact And Notification Direction
 
 - Treat `Reveal email` and `Reveal phone` as the primary contact actions on every card.
 - Use secondary buttons only for record keeping: `Record contact`, `Record help offer`, and `Mark matched`.
 - Require at least one contact method to be revealed before showing `Record contact` or `Record help offer`.
-- Avoid request-sending labels because they imply the app notified the other person.
+- Avoid request-sending labels that imply a confirmed ride or in-app inbox. The notification only tells the post owner someone marked a possible fit and should sign in to review details.
 - Do not use disabled buttons for instructions such as `Contact first`; show that guidance as plain helper text instead.
 - Show activity labels as contact history, such as `Contacted by` or `Help offered by`, rather than as an app-managed inbox.
 

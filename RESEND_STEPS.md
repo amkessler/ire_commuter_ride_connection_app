@@ -96,8 +96,34 @@ http://localhost:3000
 8. Enter the code and confirm sign-in works again.
 9. Check Resend logs for delivery, bounces, spam complaints, or rejected messages.
 
+## 7. Configure App Notification Emails
+
+Supabase Auth SMTP sends one-time sign-in codes. The app's match-alert emails use the Resend API from the `send-ride-notification` Supabase Edge Function.
+
+Set the Resend API key as a Supabase Edge Function secret:
+
+```bash
+supabase secrets set RESEND_API_KEY=your_resend_api_key
+```
+
+Optional sender and app URL overrides:
+
+```bash
+supabase secrets set RIDE_NOTIFICATION_FROM='IRE Commuter Ride Connection <rides@send.yourdomain.com>'
+supabase secrets set RIDE_APP_URL='https://ire-ride-connection-app.vercel.app'
+```
+
+Deploy the Edge Function after code changes:
+
+```bash
+supabase functions deploy send-ride-notification
+```
+
+The notification email is intentionally minimal. It tells the post owner that someone marked their ride post as a possible match and asks them to sign in to review details. It does not include phone numbers or full contact details.
+
 ## Notes
 
 - Supabase's built-in email sender is only suitable for demos/testing because it has very low project-wide limits.
 - Custom SMTP removes the built-in Supabase sender bottleneck, but Resend still has its own account, domain, reputation, and plan limits.
+- App notification emails require both the deployed Edge Function and the `RESEND_API_KEY` secret.
 - Do not share screenshots or URLs that include Supabase access tokens.

@@ -229,6 +229,17 @@ export async function requestJoinRide(groupId, participantId) {
   if (error) throw error;
 }
 
+export async function sendRideNotification(groupId, participantId) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { error } = await supabase.functions.invoke("send-ride-notification", {
+    body: {
+      groupId,
+      participantId,
+    },
+  });
+  if (error) throw error;
+}
+
 export async function commitToRide(groupId, participantId) {
   if (!supabase) throw new Error("Supabase is not configured.");
   const { error } = await supabase.rpc("commit_to_ride", {

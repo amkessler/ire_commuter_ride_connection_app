@@ -27,6 +27,7 @@ import {
   requestJoinRide,
   saveGroupStatus,
   saveParticipantWithGroups,
+  sendRideNotification,
 } from "./supabaseData";
 
 const storageKey = "ire-ride-connection-state-v1";
@@ -1153,6 +1154,11 @@ function App() {
       setAppError("");
       try {
         await requestJoinRide(groupId, selectedParticipant.id);
+        try {
+          await sendRideNotification(groupId, selectedParticipant.id);
+        } catch (notificationError) {
+          console.warn("Ride notification was not sent.", notificationError);
+        }
         await loadRemoteBoard(session);
       } catch (error) {
         setAppError(error.message || "Unable to mark contact.");

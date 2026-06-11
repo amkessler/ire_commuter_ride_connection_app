@@ -106,7 +106,9 @@ Security checks:
 supabase db advisors --linked --type security --level info
 ```
 
-The app intentionally exposes three authenticated RPCs: `get_my_role`, `request_join_ride`, and `commit_to_ride`. `request_join_ride` records that contact/help was initiated, while `commit_to_ride` requires that prior contact marker and enforces the contact-first match rules. Both ride-action RPCs validate participant/group compatibility, ownership or admin permission, full groups, self-matches, and already-matched participants before changing data. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
+The app intentionally exposes authenticated RPCs for narrow server-side actions: `get_my_role`, `request_join_ride`, `commit_to_ride`, and admin moderation helpers. `request_join_ride` records that contact/help was initiated, while `commit_to_ride` requires that prior contact marker and enforces the contact-first match rules. Both ride-action RPCs validate participant/group compatibility, ownership or admin permission, full groups, self-matches, and already-matched participants before changing data. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
+
+The app also includes a `send-ride-notification` Supabase Edge Function. After `request_join_ride` succeeds, the frontend calls this function on a best-effort basis. The function verifies the signed-in requester, confirms the inquiry exists, creates one `ride_notification_events` row per requester/post pair, and sends a minimal Resend email telling the post owner to sign in and review the possible match. Notification failures do not undo the contact marker.
 
 Regular users sign in by email one-time code. The hosted Supabase email templates must send `{{ .Token }}` instead of a magic sign-in link. Supabase uses the `Magic Link / OTP` template for returning passwordless users and the `Confirm signup` template for first-time users, so both templates need to be configured for codes.
 
@@ -120,6 +122,15 @@ Email code checklist:
 6. Open `Magic Link / OTP` and confirm the template includes `{{ .Token }}` and does not rely on `{{ .ConfirmationURL }}`.
 7. Open `Confirm signup` and confirm that first-time users also receive `{{ .Token }}` instead of a confirmation link.
 8. Send a test login email for both a new email address and a returning email address, then verify the received code works in the app's `One-time code` field.
+
+Ride notification checklist:
+
+1. Confirm the Supabase Edge Function secret `RESEND_API_KEY` is set.
+2. Optionally set `RIDE_NOTIFICATION_FROM` if the sender should differ from `IRE Commuter Ride Connection <rides@send.aaronmkessler.com>`.
+3. Optionally set `RIDE_APP_URL` if the production app URL changes.
+4. Deploy `send-ride-notification` after code changes.
+5. Test by signing in as one user, recording contact/help on another user's post, and confirming the post owner receives one email.
+6. Check `public.ride_notification_events` for `sent`, `skipped`, or `failed` status if a user reports a missing alert.
 
 Admins are controlled by `public.admin_users`. The user must sign in once before they can be
 made an admin, because that first sign-in creates their Supabase Auth user record.
