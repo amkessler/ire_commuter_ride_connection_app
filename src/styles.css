@@ -1273,6 +1273,11 @@ button:focus-visible {
   width: 100%;
 }
 
+.auth-edit-email {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
 .sample-return-button {
   background: #f7ecea;
   border-color: #e3c9c5;

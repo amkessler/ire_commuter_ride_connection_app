@@ -684,6 +684,7 @@ function App() {
   const [userRole, setUserRole] = useState("user");
   const [authEmail, setAuthEmail] = useState("");
   const [authCode, setAuthCode] = useState("");
+  const [authCodeSent, setAuthCodeSent] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
   const [appError, setAppError] = useState("");
   const [rideInfoMessage, setRideInfoMessage] = useState("");
@@ -710,19 +711,6 @@ function App() {
       setForm(participantToForm(ownParticipant));
     }
   }, [ownParticipant, session]);
-
-  useEffect(() => {
-    if (!isInstructionsOpen) return undefined;
-
-    function closeOnEscape(event) {
-      if (event.key === "Escape") {
-        setIsInstructionsOpen(false);
-      }
-    }
-
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [isInstructionsOpen]);
 
   const refreshAdminMfaAccess = useCallback(async () => {
     if (!supabase) {
@@ -800,6 +788,7 @@ function App() {
       if (!isMounted) return;
       setSession(data.session);
       if (data.session) {
+        setAuthCodeSent(false);
         await loadRemoteBoard(data.session);
       }
     }
@@ -809,8 +798,10 @@ function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       if (nextSession) {
+        setAuthCodeSent(false);
         loadRemoteBoard(nextSession);
       } else {
+        setAuthCodeSent(false);
         setUserRole("user");
         setHasAdminMfaAccess(false);
         setState(loadInitialState());
@@ -830,6 +821,7 @@ function App() {
     const normalizedEmail = authEmail.trim().toLowerCase();
     setAppError("");
     setAuthMessage("");
+    setAuthCode("");
     const { error } = await supabase.auth.signInWithOtp({
       email: normalizedEmail,
       options: {
@@ -842,6 +834,7 @@ function App() {
       return;
     }
     setAuthEmail(normalizedEmail);
+    setAuthCodeSent(true);
     setAuthMessage("Check your email for a one-time sign-in code.");
   }
 
@@ -861,21 +854,45 @@ function App() {
     }
     setAuthEmail(normalizedEmail);
     setAuthCode("");
+    setAuthCodeSent(false);
     setAuthMessage("Signed in.");
   }
 
   async function signOut() {
     if (!supabase) return;
     await supabase.auth.signOut();
+    setAuthCodeSent(false);
     setAuthMessage("");
   }
 
   function useSampleMode() {
     setAuthEmail("");
     setAuthCode("");
+    setAuthCodeSent(false);
     setAuthMessage("");
     setAppError("");
   }
+
+  function updateAuthEmail(value) {
+    setAuthEmail(value);
+    setAuthCode("");
+    setAuthCodeSent(false);
+    setAuthMessage("");
+  }
+
+  function editAuthEmail() {
+    setAuthCode("");
+    setAuthCodeSent(false);
+    setAuthMessage("");
+  }
+
+  const openInstructions = useCallback(() => {
+    setIsInstructionsOpen(true);
+  }, []);
+
+  const closeInstructions = useCallback(() => {
+    setIsInstructionsOpen(false);
+  }, []);
 
   function persist(nextState) {
     setState(nextState);
@@ -1250,18 +1267,20 @@ function App() {
       <AuthPanel
         appError={appError}
         authCode={authCode}
+        authCodeSent={authCodeSent}
         authEmail={authEmail}
         authMessage={authMessage}
         hasSupabaseConfig={hasSupabaseConfig}
         isSyncing={isSyncing}
+        onEditAuthEmail={editAuthEmail}
         onSendCode={sendLoginCode}
-        onOpenInstructions={() => setIsInstructionsOpen(true)}
+        onOpenInstructions={openInstructions}
         onSignOut={signOut}
         onUseSampleMode={useSampleMode}
         onVerifyCode={verifyLoginCode}
         session={session}
         setAuthCode={setAuthCode}
-        setAuthEmail={setAuthEmail}
+        setAuthEmail={updateAuthEmail}
         hasAdminMfaAccess={hasAdminMfaAccess}
         onAdminMfaVerified={handleAdminMfaVerified}
         userRole={userRole}
@@ -1311,7 +1330,7 @@ function App() {
               <span className="step-badge">2</span>
               <div>
                 <p className="eyebrow">Connection board</p>
-                <h2>Likely matches</h2>
+                <h2>{session ? "Likely matches" : "Likely matches (sample)"}</h2>
               </div>
             </div>
           </div>
@@ -1386,13 +1405,62 @@ function App() {
       </main>
 
       {isInstructionsOpen && (
-        <InstructionsModal onClose={() => setIsInstructionsOpen(false)} />
+        <InstructionsModal onClose={closeInstructions} />
       )}
     </div>
   );
 }
 
 function InstructionsModal({ onClose }) {
+  const modalRef = useRef(null);
+  const closeButtonRef = useRef(null);
+  const previousFocusRef = useRef(null);
+
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    closeButtonRef.current?.focus();
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab" || !modalRef.current) return;
+
+      const focusableElements = Array.from(
+        modalRef.current.querySelectorAll(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element instanceof HTMLElement && element.offsetParent !== null);
+
+      if (!focusableElements.length) {
+        event.preventDefault();
+        modalRef.current.focus();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocusRef.current?.focus?.();
+    };
+  }, [onClose]);
+
   return (
     <div
       className="modal-backdrop"
@@ -1406,7 +1474,9 @@ function InstructionsModal({ onClose }) {
         aria-labelledby="instructions-title"
         aria-modal="true"
         className="instructions-modal"
+        ref={modalRef}
         role="dialog"
+        tabIndex={-1}
       >
         <div className="instructions-modal-header">
           <div>
@@ -1416,6 +1486,7 @@ function InstructionsModal({ onClose }) {
           <button
             aria-label="Close instructions"
             className="icon-button"
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
           >
@@ -1477,12 +1548,14 @@ function InstructionsModal({ onClose }) {
 function AuthPanel({
   appError,
   authCode,
+  authCodeSent,
   authEmail,
   authMessage,
   hasAdminMfaAccess,
   hasSupabaseConfig,
   isSyncing,
   onAdminMfaVerified,
+  onEditAuthEmail,
   onOpenInstructions,
   onSendCode,
   onSignOut,
@@ -1567,38 +1640,49 @@ function AuthPanel({
       )}
       {isExpanded && (
         <>
-          <form className="auth-form" onSubmit={onSendCode}>
-            <label className="field">
-              <span>Account email</span>
-              <input
-                autoComplete="email"
-                id="account-email"
-                name="email"
-                required
-                type="email"
-                value={authEmail}
-                onChange={(event) => setAuthEmail(event.target.value)}
-                placeholder="you@example.com"
-              />
-            </label>
-            <button className="primary-button" type="submit">
-              Send code
-            </button>
-          </form>
-          <form className="auth-form" onSubmit={onVerifyCode}>
-            <label className="field">
-              <span>One-time code</span>
-              <input
-                inputMode="numeric"
-                value={authCode}
-                onChange={(event) => setAuthCode(event.target.value)}
-                placeholder="123456"
-              />
-            </label>
-            <button className="secondary-button" disabled={!authCode} type="submit">
-              Verify code
-            </button>
-          </form>
+          {!authCodeSent ? (
+            <form className="auth-form" onSubmit={onSendCode}>
+              <label className="field">
+                <span>Account email</span>
+                <input
+                  autoComplete="email"
+                  id="account-email"
+                  name="email"
+                  required
+                  type="email"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  placeholder="you@example.com"
+                />
+              </label>
+              <button className="primary-button" type="submit">
+                Send code
+              </button>
+            </form>
+          ) : (
+            <form className="auth-form" onSubmit={onVerifyCode}>
+              <label className="field">
+                <span>One-time code</span>
+                <input
+                  autoComplete="one-time-code"
+                  id="one-time-code"
+                  inputMode="numeric"
+                  name="one-time-code"
+                  pattern="[0-9]*"
+                  required
+                  value={authCode}
+                  onChange={(event) => setAuthCode(event.target.value)}
+                  placeholder="12345678"
+                />
+              </label>
+              <button className="secondary-button" disabled={!authCode.trim()} type="submit">
+                Verify code
+              </button>
+              <button className="text-button auth-edit-email" type="button" onClick={onEditAuthEmail}>
+                Use a different email
+              </button>
+            </form>
+          )}
           <div className="auth-expanded-actions">
             <button className="secondary-button sample-return-button" type="button" onClick={returnToSampleMode}>
               Stay in sample mode
@@ -1610,8 +1694,8 @@ function AuthPanel({
           </div>
         </>
       )}
-      {authMessage && <p className="success-text">{authMessage}</p>}
-      {appError && <p className="error-text">{appError}</p>}
+      {authMessage && <p className="success-text" aria-live="polite">{authMessage}</p>}
+      {appError && <p className="error-text" aria-live="assertive">{appError}</p>}
     </section>
   );
 }
@@ -2004,6 +2088,8 @@ function EntryForm({
       <label className="field">
         <span>Phone</span>
         <input
+          autoComplete="tel"
+          type="tel"
           value={form.phone}
           onChange={(event) => onFieldChange("phone", event.target.value)}
           placeholder="Optional"
