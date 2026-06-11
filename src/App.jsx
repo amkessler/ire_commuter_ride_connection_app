@@ -4,6 +4,7 @@ import {
   Car,
   CheckCircle2,
   CircleAlert,
+  CircleHelp,
   Filter,
   Mail,
   MapPin,
@@ -13,6 +14,7 @@ import {
   Search,
   UserPlus,
   Users,
+  X,
 } from "lucide-react";
 import { hasSupabaseConfig, supabase } from "./supabaseClient";
 import {
@@ -667,6 +669,7 @@ function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasAdminMfaAccess, setHasAdminMfaAccess] = useState(false);
   const [isPlanEditorOpen, setIsPlanEditorOpen] = useState(false);
+  const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
   const boardRequestId = useRef(0);
 
   const { participants, groups } = state;
@@ -686,6 +689,19 @@ function App() {
       setForm(participantToForm(ownParticipant));
     }
   }, [ownParticipant, session]);
+
+  useEffect(() => {
+    if (!isInstructionsOpen) return undefined;
+
+    function closeOnEscape(event) {
+      if (event.key === "Escape") {
+        setIsInstructionsOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [isInstructionsOpen]);
 
   const refreshAdminMfaAccess = useCallback(async () => {
     if (!supabase) {
@@ -1183,6 +1199,7 @@ function App() {
         hasSupabaseConfig={hasSupabaseConfig}
         isSyncing={isSyncing}
         onSendCode={sendLoginCode}
+        onOpenInstructions={() => setIsInstructionsOpen(true)}
         onSignOut={signOut}
         onVerifyCode={verifyLoginCode}
         session={session}
@@ -1308,6 +1325,91 @@ function App() {
           </div>
         </section>
       </main>
+
+      {isInstructionsOpen && (
+        <InstructionsModal onClose={() => setIsInstructionsOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+function InstructionsModal({ onClose }) {
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        aria-labelledby="instructions-title"
+        aria-modal="true"
+        className="instructions-modal"
+        role="dialog"
+      >
+        <div className="instructions-modal-header">
+          <div>
+            <p className="eyebrow">Quick guide</p>
+            <h2 id="instructions-title">How to use IRE Ride Connection</h2>
+          </div>
+          <button
+            aria-label="Close instructions"
+            className="icon-button"
+            type="button"
+            onClick={onClose}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        <ol className="instructions-list">
+          <li>
+            <strong>Add your ride info.</strong>
+            <span>
+              Enter where you are coming from, when you need rides, and whether you can drive,
+              need a seat, or want to split a rideshare.
+            </span>
+          </li>
+          <li>
+            <strong>Review likely matches.</strong>
+            <span>
+              The board highlights people and groups with similar routes, compatible time slots,
+              and open seats or shared rideshare interest.
+            </span>
+          </li>
+          <li>
+            <strong>Contact people directly.</strong>
+            <span>
+              Use the email or phone buttons on a card when you are ready to coordinate pickup
+              details. Contact details stay hidden until you choose to reveal them.
+            </span>
+          </li>
+          <li>
+            <strong>Signal interest before matching.</strong>
+            <span>
+              Click "Ask about this ride" first. Once you and the other person agree, the ride host
+              or an admin can mark the match.
+            </span>
+          </li>
+          <li>
+            <strong>Keep your post current.</strong>
+            <span>
+              Update your plan if your schedule changes, your car fills up, or you no longer need
+              a ride.
+            </span>
+          </li>
+        </ol>
+
+        <div className="instructions-note">
+          <strong>Signed-out preview mode</strong>
+          <span>
+            If you are not signed in, the app shows sample data so you can see how matching works.
+            Sign in with your email code to save real ride information.
+          </span>
+        </div>
+      </section>
     </div>
   );
 }
@@ -1321,6 +1423,7 @@ function AuthPanel({
   hasSupabaseConfig,
   isSyncing,
   onAdminMfaVerified,
+  onOpenInstructions,
   onSendCode,
   onSignOut,
   onVerifyCode,
@@ -1378,9 +1481,19 @@ function AuthPanel({
         </span>
       </div>
       {!isExpanded && (
-        <button className="secondary-button" type="button" onClick={() => setIsExpanded(true)}>
-          Sign in
-        </button>
+        <>
+          <div className="auth-center-action">
+            <button className="secondary-button" type="button" onClick={() => setIsExpanded(true)}>
+              Sign in
+            </button>
+          </div>
+          <div className="auth-help-action">
+            <button className="secondary-button help-trigger" type="button" onClick={onOpenInstructions}>
+              <CircleHelp size={16} aria-hidden="true" />
+              How to use this app
+            </button>
+          </div>
+        </>
       )}
       {isExpanded && (
         <>
