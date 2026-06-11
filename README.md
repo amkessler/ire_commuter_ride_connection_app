@@ -4,15 +4,18 @@ React/Vite app for coordinating conference rides to National Harbor, Maryland fr
 
 ## Current Product Shape
 
-The app has two primary areas:
+The app has three primary areas:
 
 - `Your plan`: one form where a signed-in attendee creates, edits, or removes their single ride profile.
 - `Likely matches`: a compact list of relevant carpool offers, carpool requests, and Uber/Lyft split groups.
+- `Your ride activity`: a signed-in summary of pending contacts, people the user contacted, and confirmed matches.
 
-Users can open the `How to use this app` modal for a short guide without cluttering the main board. Signed-out users see clearly labeled sample data and can return to sample mode if they start sign-in and change their mind. Signed-in users can reveal email or phone details when they want to reach someone, mark that contact or a help offer happened, and then mark a match only after there has been mutual agreement. Sign-in, saved ride-plan details, prototype preview tools, and card history stay collapsed until needed. The UI deliberately avoids letting someone instantly commit to another attendee's ride without prior contact.
+Users can open the `How to use this app` modal for a short guide without cluttering the main board. Signed-out users see clearly labeled sample data and can return to sample mode if they start sign-in and change their mind. Signed-in users can reveal email or phone details when they want to reach someone, mark that contact or a help offer happened for specific conference trip slots, and then mark only the mutually agreed slots as matched. Sign-in, saved ride-plan details, prototype preview tools, and card history stay collapsed until needed. The UI deliberately avoids letting someone instantly commit to another attendee's ride without prior contact.
 
 The workflow rules are:
 
+- Contact interest is per slot. A user can record interest in `Thu AM` and `Thu PM` without recording interest in `Fri AM`.
+- Final matching is also per slot. A driver or organizer can mark only `Thu AM` as matched and leave `Thu PM` pending.
 - Carpool drivers can mark final matches for their own carpool offers.
 - For carpool requests, a potential helper must mark that they offered help before the request can be marked matched.
 - For Uber/Lyft split groups, either the organizer or the contacted participant can mark the group matched after contact is recorded.
@@ -42,6 +45,17 @@ The workflow rules are:
 - `status`: `open`, `pending`, `committed`, or `full`
 - `availability`
 - `inquiries`: participant IDs that have marked contact or offered help. This is an internal database name; the current UI presents it as contact tracking.
+- `inquirySlotsByParticipant`: app-shaped map of participant ID to pending contact slots, sourced from `ride_inquiries.interest_slots`.
+- `matchedSlotsByParticipant`: app-shaped map of participant ID to confirmed slots, sourced from `ride_memberships.matched_slots`.
+
+In Supabase:
+
+- `ride_inquiries.interest_slots` stores the selected pending contact/help slots.
+- `ride_memberships.matched_slots` stores the selected confirmed match slots.
+- `request_join_ride(p_group_id, p_participant_id, p_slot_ids)` validates and records pending slots.
+- `commit_to_ride(p_group_id, p_participant_id, p_slot_ids)` validates that the slots were previously pending, records only those matched slots, and leaves unselected pending slots in place.
+
+Capacity is evaluated by slot. A carpool with one open seat can be full for `Thu AM` but still open for `Fri AM`.
 
 ## Matching Logic
 
@@ -106,7 +120,7 @@ Security checks:
 supabase db advisors --linked --type security --level info
 ```
 
-The app intentionally exposes authenticated RPCs for narrow server-side actions: `get_my_role`, `request_join_ride`, `commit_to_ride`, and admin moderation helpers. `request_join_ride` records that contact/help was initiated, while `commit_to_ride` requires that prior contact marker and enforces the contact-first match rules. Both ride-action RPCs validate participant/group compatibility, ownership or admin permission, full groups, self-matches, and already-matched participants before changing data. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
+The app intentionally exposes authenticated RPCs for narrow server-side actions: `get_my_role`, `request_join_ride`, `commit_to_ride`, and admin moderation helpers. `request_join_ride` records that contact/help was initiated for selected slots, while `commit_to_ride` requires that prior contact marker and enforces the contact-first match rules for the selected slots. Both ride-action RPCs validate participant/group compatibility, ownership or admin permission, slot-level capacity, self-matches, and already-matched slots before changing data. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
 
 The app also includes a `send-ride-notification` Supabase Edge Function. After `request_join_ride` succeeds, the frontend calls this function on a best-effort basis. The function verifies the signed-in requester, confirms the inquiry exists, creates one `ride_notification_events` row per requester/post pair, and sends a minimal Resend email telling the post owner to sign in and review the possible match. Notification failures do not undo the contact marker.
 
@@ -172,3 +186,17 @@ Ride group duplicate prevention:
 
 - Each participant can host at most one carpool offer group, one carpool request group, and one rideshare group.
 - Updating a profile upserts the relevant hosted groups instead of inserting duplicate groups.
+
+## Per-Slot Workflow Test
+
+Use this smoke test after changing contact, match, or capacity logic:
+
+1. Account A creates a carpool offer with `Thu AM`, `Thu PM`, and `Fri AM`.
+2. Account B creates a compatible carpool request with the same slots.
+3. Account B reveals contact info and records interest only in `Thu AM` and `Thu PM`.
+4. Confirm `ride_inquiries.interest_slots` contains only `thuAm` and `thuPm`.
+5. Account A marks only `Thu AM` as matched.
+6. Confirm `ride_memberships.matched_slots` contains only `thuAm`.
+7. Confirm `ride_inquiries.interest_slots` still contains `thuPm`.
+8. Confirm `Fri AM` is not treated as contacted or matched.
+9. Confirm the card can show a split state such as `Matched: Thu AM; pending: Thu PM`.

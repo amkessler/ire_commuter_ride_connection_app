@@ -273,7 +273,13 @@ Example:
   routeFlexibility: "moderate",
   capacity: 2,
   riderIds: ["p2"],
+  matchedSlotsByParticipant: {
+    p2: ["thuAm"]
+  },
   inquiries: ["p3"],
+  inquirySlotsByParticipant: {
+    p3: ["thuPm", "friAm"]
+  },
   status: "committed",
   availability: {...}
 }
@@ -282,6 +288,8 @@ Example:
 A group has a host. The host is linked by `hostId`. A group can be a driver carpool, a carpool request, or an Uber/Lyft split.
 
 That means the group does not copy Maya's full name, email, phone, and notes. It stores her ID. When the app needs Maya's details, it looks her up in the participants list. In the database, the final match state is still stored as `committed`; in the simple interface, users see that idea as `matched`, which is clearer for the current workflow.
+
+The app also tracks which conference trip slots each contact or match applies to. That matters because a person might be interested in Thursday morning and Thursday evening, but not Friday morning. A later match for Thursday morning should not silently imply that Friday morning is also matched.
 
 This is a classic data-modeling pattern. Instead of duplicating the same information in multiple places, keep one source of truth and connect records by ID.
 
@@ -324,6 +332,17 @@ A string is nice for humans but awkward for code. A boolean object is easy to fi
 The app can quickly ask: "Do this person and this ride group both have `friAm` set to true?"
 
 That is how shared time slots are found.
+
+The same slot IDs are now stored on contact and match records:
+
+- `ride_inquiries.interest_slots` stores the pending slots someone contacted another user about.
+- `ride_memberships.matched_slots` stores the slots that were actually confirmed as matched.
+
+That lets the app show split states such as:
+
+```text
+Matched: Thu AM; pending: Thu PM
+```
 
 ## Corridors: A Practical Substitute For Maps
 
@@ -428,11 +447,11 @@ The app uses these statuses:
 
 This is more useful than a simple yes/no. One naming detail matters: the database value is still `committed` because that was the first implementation name, but the app presents that state to users as `matched`.
 
-Real coordination has gray areas. Someone might have asked about a ride but not confirmed. A driver might have two riders matched but still have one carpool seat. A rideshare group might have three people but room for a fourth.
+Real coordination has gray areas. Someone might have asked about a ride but not confirmed. A driver might have one rider matched for Thursday morning but still have that same seat open for Friday morning. A rideshare group might have three people on one trip slot but room for a fourth on another.
 
 The app models those gray areas.
 
-The function `effectiveStatus` also protects against bad status data. If a group has no open spots, it is treated as full even if its stored status says something else.
+The function `effectiveStatus` also protects against bad status data. If a group has no open spots for any active slot, it is treated as full even if its stored status says something else.
 
 That is a small but important engineering habit: do not trust one field when another field can prove it wrong.
 
@@ -442,21 +461,23 @@ Capacity works differently for the two group types.
 
 For a driver carpool, capacity means available carpool seats.
 
-If Maya offers two carpool seats and Jon has matched with that ride, the app says:
+If Maya offers two carpool seats and Jon has matched with that ride for a selected slot, the app says something like:
 
 ```text
-1/2 carpool seats matched
+1/2 carpool seats committed by slot
 ```
 
 For an Uber/Lyft split, the host is part of the ride pool. If Sam starts a rideshare pool with a party cap of four, Sam already counts as one rider.
 
-So the app counts rideshare matched people as:
+So the app counts rideshare matched people for a slot roughly as:
 
 ```js
-group.riderIds.length + 1
+matched riders for that slot + 1 host
 ```
 
 That `+ 1` is easy to miss, but it matters. It prevents the app from acting like the host is not in the vehicle.
+
+The latest version counts capacity by trip slot. A group can be full on `Thu AM` and still have open space on `Fri AM`.
 
 ## Storage: Sample Notebook Plus Shared Database
 
@@ -525,8 +546,8 @@ The main database tables are:
 - `participants`: the full ride profile for a signed-in user, including contact info.
 - `participant_directory`: a lower-exposure directory table that exposes the fields needed for matching.
 - `ride_groups`: carpool and Uber/Lyft split groups.
-- `ride_memberships`: final matched riders.
-- `ride_inquiries`: the internal contact/help markers for people who have reached out but are not matched yet.
+- `ride_memberships`: final matched riders, including which trip slots are matched.
+- `ride_inquiries`: the internal contact/help markers for people who have reached out but are not matched yet, including which trip slots are pending.
 - `admin_users`: the list of auth users who are allowed to become admins.
 
 The `participant_directory` table is worth calling out. Earlier, this was modeled as a view. The safer version is a real table with row-level security. A trigger keeps it synchronized with `participants`, but it does not expose private fields like phone numbers to every signed-in user. It does include notes, because those notes help people judge ride fit, so the UI tells users that notes are visible to signed-in users and should not contain private information.
@@ -570,13 +591,15 @@ The app uses a few Supabase RPC functions:
 
 Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can record contact/help or record an agreed match.
 
-Both ride-action RPCs check the submitted participant and ride group before changing data. They reject self-matches, already-matched participants, full groups, incompatible ride types, and users who do not own the submitted participant unless the session has MFA-verified admin access.
+Both ride-action RPCs check the submitted participant, ride group, and selected slot IDs before changing data. They reject self-matches, already-matched slots, full slots, incompatible ride types, and users who do not own the submitted participant unless the session has MFA-verified admin access.
 
 The `commit_to_ride` name is now a little historical. In the simple interface, the user-facing action is "mark matched." The RPC keeps the older name, but it now requires a prior contact marker and checks who is allowed to mark the match:
 
 - For driver carpools, the driver finalizes the match.
 - For carpool requests, a helper must mark that they offered help first.
 - For Uber/Lyft splits, either the organizer or the contacted participant can mark the match after the contact marker exists.
+
+The selected slots are important. `request_join_ride` records pending interest for the chosen slots. `commit_to_ride` records only the selected agreed slots and leaves any other pending slots pending.
 
 The important engineering rule is not "never use security-definer functions." The rule is "make them small, explicit, and carefully permission-checked."
 
@@ -870,6 +893,21 @@ The database now requires admin membership plus MFA verification before granting
 
 Lesson: admin tools are powerful because they cross normal user boundaries. Treat them like a locked maintenance room, not like a hidden menu item.
 
+## Decision: Track Contact And Matches Per Slot
+
+One ride profile can include several separate conference commute slots. Treating the whole post as one match was too coarse because a Thursday morning agreement does not automatically cover Thursday evening, Friday morning, or Sunday morning.
+
+The app now records contact interest and confirmed matches by slot.
+
+Why this was good:
+
+- Users can express interest in only the trip portions they actually want.
+- Drivers and organizers can confirm only the slots everyone has agreed to.
+- Remaining pending slots stay visible instead of disappearing.
+- Capacity can be evaluated by slot, which better reflects real carpool seats and rideshare space.
+
+Lesson: simple interfaces can still need precise state. The UI stays calm, but the database records the specific real-world commitment.
+
 ## Bugs And Issues We Ran Into
 
 The project had several useful bumps. These are worth documenting because they are exactly the kind of things real projects run into.
@@ -948,7 +986,7 @@ Record help offer
 Mark matched
 ```
 
-That wording is more honest. The app is not sending automated email. It lets people reveal contact details, coordinate outside the app, and then record what happened.
+That wording is more honest. The app sends a lightweight notification to the post owner when contact/help is recorded, but it is not managing the conversation or confirming the ride. People still reveal contact details, coordinate outside the app, and then record what happened.
 
 The meaning stayed clear, and the layout became cleaner.
 
@@ -1097,14 +1135,29 @@ That changed the workflow. The app now treats direct contact as the first step a
 The fix included frontend and database logic:
 
 - Reveal email or phone first, then email or call outside the app.
-- Mark that contact or a help offer happened.
-- Disable match actions until the contact marker exists.
-- Let carpool drivers finalize their own carpool matches.
+- Mark that contact or a help offer happened for selected trip slots.
+- Disable match actions until the relevant contact marker exists.
+- Let carpool drivers finalize their own carpool matches for selected agreed slots.
 - Let Uber/Lyft organizers or contacted participants mark a match after contact.
 - Keep `Matched` out of the ordinary status dropdown for unmatched posts, so people do not skip the contact-first path.
 - Keep sign-in, profile editing, prototype preview tools, card history, and owner-only status controls out of the way until they are needed.
 
 Lesson: the right button is not always the fastest button. Sometimes good product design slows one action down so the real-world agreement is cleaner.
+
+## Issue 13: Whole-Post Matches Were Too Broad
+
+After the contact-first flow worked, another real-world issue appeared: one post can cover several trips. Matching someone for Thursday morning should not imply that Friday morning or Sunday morning is also agreed.
+
+The fix was to make contact interest and final matching slot-specific:
+
+- `ride_inquiries.interest_slots` stores which slots the contact/help marker applies to.
+- `ride_memberships.matched_slots` stores which slots were actually confirmed.
+- Recording contact opens a slot picker.
+- Marking a match opens a slot picker and only moves selected pending slots into matched state.
+- Unselected pending slots stay pending.
+- Unmentioned shared slots stay untouched.
+
+Lesson: when one record represents several real-world events, the app must store which event the action applies to.
 
 ## What Good Engineers Did Here
 
@@ -1389,9 +1442,12 @@ And here is the contact-first match flow:
 ```text
 attendee clicks Reveal email or Reveal phone
   -> people talk directly outside the app
-  -> attendee marks contact or help offered in the app
-  -> allowed user marks the match
-  -> app records the membership/match
+  -> attendee chooses the slots they contacted about
+  -> app records pending interest for those slots
+  -> post owner receives a lightweight email alert
+  -> allowed user chooses the slots everyone agreed to
+  -> app records only those selected slots as matched
+  -> any other pending slots stay pending
 ```
 
 ## What Would Come Next
@@ -1405,7 +1461,7 @@ Good next steps:
 3. Add optional pickup coordinates or meeting points.
 4. Add real route/detour estimates.
 5. Add privacy controls for contact information.
-6. Add dedicated admin moderation screens.
+6. Add more dedicated admin moderation screens if the board oversight tools need to grow.
 7. Add import from the original Google Sheet.
 8. Keep the hosted email template under source-control notes/checklists so future changes do not accidentally remove `{{ .Token }}`.
 9. Deploy with production redirect URLs.
@@ -1507,6 +1563,7 @@ participants
   seats_available
   seats_needed
   max_party_size
+  availability
   notes
   created_at
   updated_at
@@ -1523,18 +1580,20 @@ ride_groups
   route_flexibility
   capacity
   status
-  notes
+  availability
   created_at
   updated_at
 
 ride_memberships
   group_id
   participant_id
+  matched_slots
   created_at
 
 ride_inquiries
   group_id
   participant_id
+  interest_slots
   created_at
 ```
 
@@ -1652,6 +1711,7 @@ For visual checks, open the app in a browser and inspect:
 - Ride cards.
 - Capacity meters.
 - Inquiry, offer-help, and match actions.
+- Per-slot contact and match state, including a case where one slot is matched and another remains pending.
 - The how-to modal.
 - The signed-in post removal flow.
 - Status filtering.
@@ -1670,7 +1730,11 @@ Do not skip visual inspection. Front-end bugs often live in the space between "t
 
 `riderIds`: Participants who have been matched into a group. In the database this is still stored through `ride_memberships`.
 
+`matched_slots`: The selected conference trip slots that have been confirmed as matched for a participant in a ride group.
+
 `inquiries`: The internal database name for participants who have marked contact or offered help but are not matched yet. In the UI, these are presented as contact/help markers.
+
+`interest_slots`: The selected conference trip slots that a contact/help marker applies to.
 
 `corridor`: A regional route bucket, such as DC Northwest or Arlington/Alexandria.
 

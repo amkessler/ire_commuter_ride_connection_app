@@ -121,6 +121,21 @@ supabase functions deploy send-ride-notification
 
 The notification email is intentionally minimal. It tells the post owner that someone marked their ride post as a possible match and asks them to sign in to review details. It does not include phone numbers or full contact details.
 
+Contact and match state is now slot-specific. A notification means someone recorded contact/help for one or more selected conference trip slots; it does not mean every overlapping slot has been accepted or matched.
+
+## 8. Test Contact Alerts With Slot-Specific Matching
+
+After SMTP, secrets, and the Edge Function are configured:
+
+1. Sign in as User A and create a post with multiple slots, such as `Thu AM`, `Thu PM`, and `Fri AM`.
+2. Sign in as User B and create a compatible profile.
+3. User B reveals User A's contact details and records interest only in selected slots, such as `Thu AM` and `Thu PM`.
+4. Confirm User A receives one notification email.
+5. Confirm the app still shows only the selected pending slots.
+6. Have User A mark only one slot matched, such as `Thu AM`.
+7. Confirm the remaining selected slot, such as `Thu PM`, stays pending.
+8. Check Resend logs and `public.ride_notification_events` if the alert is missing.
+
 ## Notes
 
 - Supabase's built-in email sender is only suitable for demos/testing because it has very low project-wide limits.
