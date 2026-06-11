@@ -845,6 +845,13 @@ function App() {
     setAuthMessage("");
   }
 
+  function useSampleMode() {
+    setAuthEmail("");
+    setAuthCode("");
+    setAuthMessage("");
+    setAppError("");
+  }
+
   function persist(nextState) {
     setState(nextState);
     window.localStorage.setItem(storageKey, JSON.stringify(nextState));
@@ -1201,6 +1208,7 @@ function App() {
         onSendCode={sendLoginCode}
         onOpenInstructions={() => setIsInstructionsOpen(true)}
         onSignOut={signOut}
+        onUseSampleMode={useSampleMode}
         onVerifyCode={verifyLoginCode}
         session={session}
         setAuthCode={setAuthCode}
@@ -1223,7 +1231,7 @@ function App() {
                     : "Add your ride info"
                   : session
                     ? "Your saved ride info"
-                    : "Previewed ride plan"}
+                    : "Previewed ride plan (sample)"}
               </h2>
             </div>
           </div>
@@ -1397,7 +1405,8 @@ function InstructionsModal({ onClose }) {
             <strong>Keep your post current.</strong>
             <span>
               Update your plan if your schedule changes, your car fills up, or you no longer need
-              a ride.
+              a ride. Your information is saved with your email address, and you do not need a
+              password. Use the one-time code sent to your email when you want to sign back in.
             </span>
           </li>
         </ol>
@@ -1426,6 +1435,7 @@ function AuthPanel({
   onOpenInstructions,
   onSendCode,
   onSignOut,
+  onUseSampleMode,
   onVerifyCode,
   session,
   setAuthCode,
@@ -1433,6 +1443,11 @@ function AuthPanel({
   userRole,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
+
+  function returnToSampleMode() {
+    onUseSampleMode();
+    setIsExpanded(false);
+  }
 
   if (!hasSupabaseConfig) {
     return (
@@ -1464,6 +1479,10 @@ function AuthPanel({
         )}
         <button className="secondary-button" type="button" onClick={onSignOut}>
           Sign out
+        </button>
+        <button className="secondary-button help-trigger" type="button" onClick={onOpenInstructions}>
+          <CircleHelp size={16} aria-hidden="true" />
+          How to use this app
         </button>
         {appError && <p className="error-text">{appError}</p>}
       </section>
@@ -1529,6 +1548,15 @@ function AuthPanel({
               Verify code
             </button>
           </form>
+          <div className="auth-expanded-actions">
+            <button className="secondary-button" type="button" onClick={returnToSampleMode}>
+              Continue with sample
+            </button>
+            <button className="secondary-button help-trigger" type="button" onClick={onOpenInstructions}>
+              <CircleHelp size={16} aria-hidden="true" />
+              How to use this app
+            </button>
+          </div>
         </>
       )}
       {authMessage && <p className="success-text">{authMessage}</p>}

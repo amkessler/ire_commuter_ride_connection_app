@@ -1233,6 +1233,11 @@ button:focus-visible {
   min-width: 120px;
 }
 
+.simple-app .auth-panel.signed-in .help-trigger {
+  margin-left: auto;
+  min-width: 190px;
+}
+
 .auth-center-action,
 .auth-help-action {
   display: flex;
@@ -1249,6 +1254,18 @@ button:focus-visible {
 
 .auth-help-action .help-trigger {
   min-width: 190px;
+}
+
+.auth-expanded-actions {
+  display: flex;
+  align-self: end;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 190px;
+}
+
+.auth-expanded-actions .secondary-button {
+  width: 100%;
 }
 
 .simple-shell {
@@ -1757,6 +1774,17 @@ button:focus-visible {
     width: 100%;
   }
 
+  .simple-app .auth-panel.signed-in .help-trigger {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .auth-expanded-actions {
+    align-self: stretch;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .simple-shell {
     grid-template-columns: 1fr;
   }
@@ -1775,6 +1803,10 @@ button:focus-visible {
 
   .help-trigger {
     width: 100%;
+  }
+
+  .auth-expanded-actions {
+    grid-template-columns: 1fr;
   }
 
   .modal-backdrop {
