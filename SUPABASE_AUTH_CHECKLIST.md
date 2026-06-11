@@ -20,8 +20,31 @@ Admins are users listed in `public.admin_users`. Admin database privileges requi
 
 Before relying on admin tools:
 
-1. Add the user's Supabase auth UUID to `public.admin_users`.
-2. Sign in as that user.
-3. Use `Set up admin MFA` if no TOTP factor exists.
-4. Verify an authenticator code.
-5. Confirm admin-only tools can load after verification.
+1. Have the user sign in once so Supabase creates their Auth user record.
+2. Add the user to `public.admin_users` by email:
+
+```sql
+insert into public.admin_users (user_id)
+select id
+from auth.users
+where email = 'person@example.com'
+on conflict do nothing;
+```
+
+3. Have the user sign out and sign back in.
+4. Use `Set up admin MFA` if no TOTP factor exists.
+5. Verify an authenticator code.
+6. Confirm admin-only tools can load after verification.
+
+To remove admin access:
+
+```sql
+delete from public.admin_users
+where user_id in (
+  select id
+  from auth.users
+  where email = 'person@example.com'
+);
+```
+
+Replace `person@example.com` with the email the user uses to sign in.

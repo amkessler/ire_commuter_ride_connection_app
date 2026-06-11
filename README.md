@@ -1,4 +1,4 @@
-# IRE Ride Connection App
+# IRE Commuter Ride Connection App
 
 React/Vite app for coordinating conference rides to National Harbor, Maryland from DC, Virginia, and Maryland. The current app keeps the richer matching model but presents it as a lighter connection board for attendee use and stakeholder review.
 
@@ -6,10 +6,10 @@ React/Vite app for coordinating conference rides to National Harbor, Maryland fr
 
 The app has two primary areas:
 
-- `Your plan`: one form where a signed-in attendee creates or edits their single ride profile.
+- `Your plan`: one form where a signed-in attendee creates, edits, or removes their single ride profile.
 - `Likely matches`: a compact list of relevant carpool offers, carpool requests, and Uber/Lyft split groups.
 
-Users can reveal email or phone details when they want to reach someone, mark that contact or a help offer happened, and then mark a match only after there has been mutual agreement. Sign-in, saved ride-plan details, prototype preview tools, and card history stay collapsed until needed. The UI deliberately avoids letting someone instantly commit to another attendee's ride without prior contact.
+Users can open the `How to use this app` modal for a short guide without cluttering the main board. Signed-out users see clearly labeled sample data and can return to sample mode if they start sign-in and change their mind. Signed-in users can reveal email or phone details when they want to reach someone, mark that contact or a help offer happened, and then mark a match only after there has been mutual agreement. Sign-in, saved ride-plan details, prototype preview tools, and card history stay collapsed until needed. The UI deliberately avoids letting someone instantly commit to another attendee's ride without prior contact.
 
 The workflow rules are:
 
@@ -29,7 +29,7 @@ The workflow rules are:
 - `transportPreference`: `carpool`, `rideshare`, or `either`
 - `seatsAvailable`, `seatsNeeded`, and `maxPartySize`
 - `availability`: booleans for Thursday AM/PM, Friday AM/PM, Saturday AM/PM, Sunday AM/PM
-- `notes`
+- `notes`: visible to signed-in users on matching ride cards; users should not put private or sensitive information here
 
 `rideGroup`
 
@@ -106,7 +106,7 @@ Security checks:
 supabase db advisors --linked --type security --level info
 ```
 
-The app intentionally exposes three authenticated RPCs: `get_my_role`, `request_join_ride`, and `commit_to_ride`. `request_join_ride` records that contact/help was initiated, while `commit_to_ride` requires that prior contact marker and enforces the contact-first match rules. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
+The app intentionally exposes three authenticated RPCs: `get_my_role`, `request_join_ride`, and `commit_to_ride`. `request_join_ride` records that contact/help was initiated, while `commit_to_ride` requires that prior contact marker and enforces the contact-first match rules. Both ride-action RPCs validate participant/group compatibility, ownership or admin permission, full groups, self-matches, and already-matched participants before changing data. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
 
 Regular users sign in by email one-time code. The hosted Supabase email template has been updated through the Management API to send `{{ .Token }}` instead of a magic sign-in link.
 
@@ -118,11 +118,31 @@ Email code checklist:
 4. Confirm the Magic Link / OTP template includes `{{ .Token }}` and does not rely on `{{ .ConfirmationURL }}`.
 5. Send a test login email and verify the received code works in the app's `One-time code` field.
 
-Admins are controlled by `public.admin_users`. Add an admin by inserting that user's auth UUID:
+Admins are controlled by `public.admin_users`. The user must sign in once before they can be
+made an admin, because that first sign-in creates their Supabase Auth user record.
+
+Add an admin by email:
 
 ```sql
 insert into public.admin_users (user_id)
-values ('00000000-0000-0000-0000-000000000000');
+select id
+from auth.users
+where email = 'person@example.com'
+on conflict do nothing;
+```
+
+Replace `person@example.com` with the email they use to sign in. Have the user sign out and sign
+back in after this change.
+
+Remove admin access by email:
+
+```sql
+delete from public.admin_users
+where user_id in (
+  select id
+  from auth.users
+  where email = 'person@example.com'
+);
 ```
 
 Admin users see the MFA setup/verification panel when signed in. After MFA is verified, admins can use the participant switcher for troubleshooting. Regular signed-in users see only their own ride profile as the matching perspective.

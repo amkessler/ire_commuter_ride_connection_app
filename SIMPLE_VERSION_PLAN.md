@@ -4,7 +4,7 @@
 
 The current app treats the experience as a small connection board, not an operations dashboard. A user should understand the page in a few seconds:
 
-1. Add or update one ride profile.
+1. Add, update, or remove one ride profile.
 2. Review likely matches.
 3. Email or call directly, mark that contact happened, and mark a match after mutual agreement.
 
@@ -14,20 +14,21 @@ The underlying ride logic stays intact, including Supabase auth, one profile per
 
 The page has two primary areas:
 
-- **Your plan:** one compact form for name, contact info, corridor, ride plan, relevant seat/group counts, trip slots, and notes.
+- **Your plan:** one compact form for name, contact info, corridor, ride plan, relevant seat/group counts, trip slots, and notes, plus signed-in controls to edit or remove the user's post.
 - **Likely matches:** a filtered list of available posts, sorted by route and schedule fit for the selected participant.
 
-The primary interface stays focused on the ride profile, likely matches, filters, route-fit context, and contact-first actions. Sample/admin participant preview remains available in a collapsed drawer because it is useful for testing and troubleshooting but should not read as part of the normal attendee workflow.
+The primary interface stays focused on the ride profile, likely matches, filters, route-fit context, and contact-first actions. The `How to use this app` button opens a modal guide so instructions remain visible without occupying the main workflow. Sample/admin participant preview remains available in a collapsed drawer because it is useful for testing and troubleshooting but should not read as part of the normal attendee workflow.
 
 ## Simplification Choices
 
 - Show only the numeric fields that apply to the selected ride plan.
 - Collapse sign-in and saved ride-plan details until the user needs to interact with them.
+- Keep signed-out sample mode clearly labeled, and let users choose `Stay in sample mode` if they start sign-in and change their mind.
 - Collapse prototype/admin preview tools until they are needed.
 - Explain the selected ride plan with one plain sentence under the ride-plan menu.
 - Keep search and corridor filtering, but reduce status filtering to "Available posts" or "All posts."
 - Make cards focus on connection essentials: ride type, corridor, neighborhood, trip slots, capacity/need, contact reveal buttons, and one or two actions.
-- Put notes and contact/match history behind a `Details and history` disclosure so the board stays easy to scan.
+- Put notes and contact/match history behind a `Details and history` disclosure so the board stays easy to scan. Notes are visible to signed-in users, so helper copy warns users not to enter private details.
 - Show a compact route-fit legend so labels like `Same corridor`, `Nearby route`, and `Likely detour` have context.
 - Show match categories instead of exact numeric fit scores.
 - Keep status controls on cards so hosts/admins can still mark posts as open, pending, matched, or full. The database still stores the final match status as `committed`.

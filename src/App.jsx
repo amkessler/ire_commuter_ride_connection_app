@@ -1436,8 +1436,8 @@ function InstructionsModal({ onClose }) {
           <li>
             <strong>Signal interest before matching.</strong>
             <span>
-              Click "Ask about this ride" first. Once you and the other person agree, the ride host
-              or an admin can mark the match.
+              Reveal email or phone, then record contact or a help offer. Once everyone agrees, the
+              allowed person can mark the match.
             </span>
           </li>
           <li>

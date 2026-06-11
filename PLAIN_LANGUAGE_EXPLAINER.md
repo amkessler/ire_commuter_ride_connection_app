@@ -1,4 +1,4 @@
-# Plain Language Explainer: IRE Ride Connection
+# Plain Language Explainer: IRE Commuter Ride Connection
 
 This project is a small React app for helping people coordinate rides to the IRE Conference in National Harbor, Maryland.
 
@@ -25,7 +25,7 @@ The app is built around those questions.
 
 At a high level, the app has three jobs.
 
-First, it lets an attendee submit one ride profile. They can enter their name, contact details, neighborhood, regional corridor, availability, and whether they are offering a carpool seat, looking for a carpool seat, trying to split an Uber/Lyft, or open to one of the mixed options.
+First, it lets an attendee submit one ride profile. They can enter their name, contact details, neighborhood, regional corridor, availability, and whether they are offering a carpool seat, looking for a carpool seat, trying to split an Uber/Lyft, or open to one of the mixed options. Signed-in users can later edit or remove that post.
 
 Second, it displays active ride options. These are shown as ride cards. A card might represent a driver carpool, where a person has a car and a fixed number of carpool seats. It might represent a carpool request, where someone needs a seat. Or it might represent a shared rideshare pool, where people are trying to split an Uber or Lyft.
 
@@ -53,6 +53,7 @@ For this first version, the app uses regional corridors:
 - DC Northeast / Capitol Hill
 - Arlington / Alexandria
 - Fairfax / Falls Church
+- Woodbridge / Springfield
 - Silver Spring / Takoma Park
 - Bethesda / Rockville
 - Prince George's County
@@ -351,7 +352,8 @@ The app also defines which corridors are near each other:
 ```js
 const corridorAdjacency = {
   "dc-nw": ["silver-spring-takoma", "bethesda-rockville", "dc-ne", "arlington-alexandria"],
-  "dc-ne": ["silver-spring-takoma", "dc-nw", "pg-county"]
+  "dc-ne": ["silver-spring-takoma", "dc-nw", "pg-county"],
+  "woodbridge-springfield": ["arlington-alexandria", "fairfax-falls-church"]
 }
 ```
 
@@ -479,6 +481,8 @@ Supabase provides:
 
 That gives the app a useful split personality: local sample data for quick demos, shared Supabase data for real users.
 
+The current interface labels signed-out data as sample data and includes a `Stay in sample mode` escape hatch if someone opens sign-in and then decides not to continue.
+
 ## State Flow: How A Form Becomes A Ride Card
 
 Here is the journey when someone fills out the form.
@@ -493,7 +497,8 @@ Here is the journey when someone fills out the form.
 8. If the user is signed out, the same data is written into local storage.
 9. If the user is signed in, the participant is upserted to Supabase.
 10. If the participant is hosting a carpool or rideshare group, the hosted group is upserted too.
-11. React reloads the board and re-renders the interface.
+11. If the signed-in user removes their post, the app deletes that participant record; hosted ride groups are removed through database cascade rules.
+12. React reloads the board and re-renders the interface.
 
 That is the central React loop:
 
@@ -518,13 +523,13 @@ The main database tables are:
 
 - `profiles`: basic auth-linked user profile information.
 - `participants`: the full ride profile for a signed-in user, including contact info.
-- `participant_directory`: a public-safe directory table that exposes only the fields needed for matching.
+- `participant_directory`: a lower-exposure directory table that exposes the fields needed for matching.
 - `ride_groups`: carpool and Uber/Lyft split groups.
 - `ride_memberships`: final matched riders.
 - `ride_inquiries`: the internal contact/help markers for people who have reached out but are not matched yet.
 - `admin_users`: the list of auth users who are allowed to become admins.
 
-The `participant_directory` table is worth calling out. Earlier, this was modeled as a view. The safer version is a real table with row-level security. A trigger keeps it synchronized with `participants`, but it does not expose private fields like phone numbers to every signed-in user.
+The `participant_directory` table is worth calling out. Earlier, this was modeled as a view. The safer version is a real table with row-level security. A trigger keeps it synchronized with `participants`, but it does not expose private fields like phone numbers to every signed-in user. It does include notes, because those notes help people judge ride fit, so the UI tells users that notes are visible to signed-in users and should not contain private information.
 
 Think of it like a conference badge. The badge can show your name and neighborhood for coordination. It does not need to print your whole registration record.
 
@@ -536,7 +541,7 @@ The React UI hides controls that a regular user should not use. But hiding a but
 
 So the real enforcement lives in the database.
 
-Regular users can manage their own participant record. Authenticated users can see the public-safe directory and ride groups. Admins can do more, but only after passing MFA.
+Regular users can manage their own participant record. Authenticated users can see the lower-exposure directory and ride groups. Admins can do more, but only after passing MFA.
 
 That last point matters: the app separates "this account is listed as an admin" from "this session currently has admin power."
 
@@ -565,6 +570,8 @@ The app uses a few Supabase RPC functions:
 
 Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can record contact/help or record an agreed match.
 
+Both ride-action RPCs check the submitted participant and ride group before changing data. They reject self-matches, already-matched participants, full groups, incompatible ride types, and users who do not own the submitted participant unless the session has MFA-verified admin access.
+
 The `commit_to_ride` name is now a little historical. In the simple interface, the user-facing action is "mark matched." The RPC keeps the older name, but it now requires a prior contact marker and checks who is allowed to mark the match:
 
 - For driver carpools, the driver finalizes the match.
@@ -581,6 +588,7 @@ The main components are:
 
 - `App`
 - `AuthPanel`
+- `InstructionsModal`
 - `BoardControls`
 - `EntryForm`
 - `PlanSummary`
@@ -679,6 +687,7 @@ This matches the user's workflow:
 3. Browse available ride groups.
 4. Evaluate matches from the correct person's point of view.
 5. Contact the other person directly by email or phone, mark that contact happened, then mark a match after agreement.
+6. Keep the post current by editing it or removing it from the board when it is no longer needed.
 
 The app uses cards for individual rides, which makes sense because each ride is a repeated item with its own status, people, capacity, and actions.
 
@@ -698,6 +707,7 @@ Some important choices:
 - Media queries collapse the layout on smaller screens.
 - Buttons, inputs, and cards have stable sizes so the layout does not jump around.
 - Status colors help users quickly read whether a ride is open, pending, matched, or full.
+- A compact help button opens the instructions modal without adding permanent instructional copy to the board.
 
 The corridor model is still in the matching logic, but the user sees it through match categories, route labels, and match ordering.
 
@@ -1182,6 +1192,7 @@ How to avoid trouble:
 - Treat signed-out data as demo data.
 - Use signed-in Supabase mode for real shared coordination.
 - Make the UI clear when the app is in sample mode.
+- Keep the `Stay in sample mode` option available when someone starts sign-in but changes their mind.
 
 ## Pitfall: Contact Info Is Sensitive
 
@@ -1501,7 +1512,8 @@ participants
   updated_at
 
 participant_directory
-  public-safe participant fields for matching and display
+  lower-exposure participant fields for matching and display
+  notes visible to signed-in users
 
 ride_groups
   id
@@ -1533,6 +1545,7 @@ The database also includes triggers and helper functions:
 - To keep `participant_directory` synced.
 - To calculate open spots.
 - To record contact/help and mark agreed matches through controlled RPCs.
+- To validate ride-action compatibility before recording contact/help or matches.
 - To enforce admin access only after MFA.
 
 ## The Most Important Product Lesson
@@ -1639,6 +1652,8 @@ For visual checks, open the app in a browser and inspect:
 - Ride cards.
 - Capacity meters.
 - Inquiry, offer-help, and match actions.
+- The how-to modal.
+- The signed-in post removal flow.
 - Status filtering.
 - Signed-out sample mode.
 - Signed-in Supabase mode, when credentials are available.
