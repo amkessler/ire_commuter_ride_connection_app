@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { hasSupabaseConfig, supabase } from "./supabaseClient";
 import {
+  adminRemoveParticipantPost,
+  adminUpdateGroupStatus,
   commitToRide,
   deleteParticipant,
   fetchSupabaseBoard,
@@ -673,12 +675,68 @@ function getFriendlyAuthErrorMessage(error) {
   return message;
 }
 
+const stalePostAgeMs = 48 * 60 * 60 * 1000;
+
+function parseDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDateTime(value) {
+  const date = parseDate(value);
+  if (!date) return "Unknown";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function getPostUpdatedAt(group, host) {
+  const groupUpdatedAt = parseDate(group?.updatedAt);
+  const hostUpdatedAt = parseDate(host?.updatedAt);
+  if (!groupUpdatedAt) return hostUpdatedAt;
+  if (!hostUpdatedAt) return groupUpdatedAt;
+  return groupUpdatedAt > hostUpdatedAt ? groupUpdatedAt : hostUpdatedAt;
+}
+
+function isStalePost(group, host) {
+  const updatedAt = getPostUpdatedAt(group, host);
+  if (!updatedAt || effectiveStatus(group) === "full") return false;
+  return Date.now() - updatedAt.getTime() >= stalePostAgeMs;
+}
+
+function hasNoPostActivity(group) {
+  return group.riderIds.length === 0 && group.inquiries.length === 0;
+}
+
+function escapeCsvCell(value) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map((row) => row.map(escapeCsvCell).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function App() {
   const [state, setState] = useState(loadInitialState);
   const [form, setForm] = useState(blankForm);
   const [selectedParticipantId, setSelectedParticipantId] = useState("p2");
   const [corridorFilter, setCorridorFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("active");
+  const [adminPostFilter, setAdminPostFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [session, setSession] = useState(null);
   const [userRole, setUserRole] = useState("user");
@@ -692,6 +750,7 @@ function App() {
   const [hasAdminMfaAccess, setHasAdminMfaAccess] = useState(false);
   const [isPlanEditorOpen, setIsPlanEditorOpen] = useState(false);
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
+  const [adminActivity, setAdminActivity] = useState([]);
   const boardRequestId = useRef(0);
 
   const { participants, groups } = state;
@@ -743,6 +802,7 @@ function App() {
           participants: board.participants,
           groups: board.groups,
         });
+        setAdminActivity(board.adminActivity || []);
         setUserRole(board.role);
         if (board.role === "admin") {
           await refreshAdminMfaAccess();
@@ -804,6 +864,7 @@ function App() {
         setAuthCodeSent(false);
         setUserRole("user");
         setHasAdminMfaAccess(false);
+        setAdminActivity([]);
         setState(loadInitialState());
         setSelectedParticipantId("p2");
       }
@@ -1054,7 +1115,11 @@ function App() {
       setIsSyncing(true);
       setAppError("");
       try {
-        await saveGroupStatus(groupId, patch.status);
+        if (hasAdminAccess) {
+          await adminUpdateGroupStatus(groupId, patch.status, "Status changed from admin tools.");
+        } else {
+          await saveGroupStatus(groupId, patch.status);
+        }
         await loadRemoteBoard(session);
       } catch (error) {
         setAppError(error.message || "Unable to update ride status.");
@@ -1166,7 +1231,12 @@ function App() {
           statusFilter === "all" ||
           (statusFilter === "active" && status !== "full") ||
           status === statusFilter;
-        return matchesQuery && matchesCorridor && matchesStatus;
+        const matchesAdminFilter =
+          !hasAdminAccess ||
+          adminPostFilter === "all" ||
+          (adminPostFilter === "stale" && isStalePost(group, host)) ||
+          (adminPostFilter === "no-activity" && hasNoPostActivity(group));
+        return matchesQuery && matchesCorridor && matchesStatus && matchesAdminFilter;
       })
       .sort((a, b) => {
         if (!selectedParticipant) return 0;
@@ -1175,7 +1245,7 @@ function App() {
           scoreGroupForParticipant(a, selectedParticipant).score
         );
       });
-  }, [corridorFilter, groups, participants, query, selectedParticipant, statusFilter]);
+  }, [adminPostFilter, corridorFilter, groups, hasAdminAccess, participants, query, selectedParticipant, statusFilter]);
 
   const selectedMatches = useMemo(() => {
     if (!selectedParticipant) return [];
@@ -1207,6 +1277,18 @@ function App() {
       openSeats,
       seekers: seekers.length,
     };
+  }, [groups, participants]);
+
+  const adminStats = useMemo(() => {
+    return groups.reduce(
+      (totals, group) => {
+        const host = participants.find((participant) => participant.id === group.hostId);
+        if (isStalePost(group, host)) totals.stale += 1;
+        if (hasNoPostActivity(group)) totals.noActivity += 1;
+        return totals;
+      },
+      { stale: 0, noActivity: 0 },
+    );
   }, [groups, participants]);
 
   const canSwitchParticipant = !session || hasAdminAccess;
@@ -1245,6 +1327,74 @@ function App() {
     } finally {
       setIsSyncing(false);
     }
+  }
+
+  async function adminRemovePost(participantId) {
+    if (!session || !supabase || !hasAdminAccess) return;
+    const participant = participants.find((item) => item.id === participantId);
+    if (!participant) return;
+
+    const reason = window.prompt(
+      `Remove ${participant.name}'s full ride post from the board? Add a short reason for the admin log.`,
+      "Stale, duplicate, or invalid post",
+    );
+    if (reason === null) return;
+
+    setIsSyncing(true);
+    setAppError("");
+    try {
+      await adminRemoveParticipantPost(participantId, reason);
+      await loadRemoteBoard(session);
+    } catch (error) {
+      setAppError(error.message || "Unable to remove post.");
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
+  function exportBoardCsv() {
+    const rows = [
+      [
+        "post_id",
+        "group_id",
+        "name",
+        "email",
+        "phone",
+        "neighborhood",
+        "corridor",
+        "ride_type",
+        "status",
+        "open_spots",
+        "inquiries",
+        "matched_riders",
+        "created_at",
+        "updated_at",
+        "notes",
+      ],
+      ...groups.map((group) => {
+        const host = participants.find((participant) => participant.id === group.hostId);
+        const counts = getGroupCounts(group);
+        return [
+          host?.id,
+          group.id,
+          host?.name,
+          host?.email,
+          host?.phone,
+          host?.neighborhood,
+          getCorridor(group.corridor).label,
+          getGroupTypeMeta(group.type).title,
+          effectiveStatus(group),
+          counts.openSpots,
+          group.inquiries.length,
+          group.riderIds.length,
+          host?.createdAt,
+          getPostUpdatedAt(group, host)?.toISOString(),
+          host?.notes,
+        ];
+      }),
+    ];
+    const dateSlug = new Date().toISOString().slice(0, 10);
+    downloadCsv(`ire-ride-posts-${dateSlug}.csv`, rows);
   }
 
   return (
@@ -1335,6 +1485,18 @@ function App() {
             </div>
           </div>
 
+          {hasAdminAccess && (
+            <AdminToolsPanel
+              activity={adminActivity}
+              adminPostFilter={adminPostFilter}
+              adminStats={adminStats}
+              filteredCount={filteredGroups.length}
+              onExportCsv={exportBoardCsv}
+              setAdminPostFilter={setAdminPostFilter}
+              totalCount={groups.length}
+            />
+          )}
+
           {canSwitchParticipant && (
             <PrototypePreviewTools
               isSignedIn={Boolean(session)}
@@ -1390,7 +1552,10 @@ function App() {
                   match={selectedParticipant ? scoreGroupForParticipant(group, selectedParticipant) : null}
                   onInquire={inquire}
                   onCommit={commit}
+                  onAdminRemovePost={adminRemovePost}
                   onStatusChange={(status) => updateGroup(group.id, { status })}
+                  isAdmin={hasAdminAccess}
+                  isSyncing={isSyncing}
                   canManageStatus={
                     hasAdminAccess ||
                     group.hostId === (session ? ownParticipant?.id : selectedParticipant?.id)
@@ -1698,6 +1863,84 @@ function AuthPanel({
       {appError && <p className="error-text" aria-live="assertive">{appError}</p>}
     </section>
   );
+}
+
+function AdminToolsPanel({
+  activity,
+  adminPostFilter,
+  adminStats,
+  filteredCount,
+  onExportCsv,
+  setAdminPostFilter,
+  totalCount,
+}) {
+  return (
+    <section className="admin-tools" aria-label="Admin tools">
+      <div className="admin-tools-header">
+        <div>
+          <p className="eyebrow">Admin tools</p>
+          <h3>Board oversight</h3>
+        </div>
+        <button className="secondary-button" type="button" onClick={onExportCsv}>
+          Export CSV
+        </button>
+      </div>
+
+      <div className="admin-tool-grid">
+        <label className="field">
+          <span>Admin filter</span>
+          <select value={adminPostFilter} onChange={(event) => setAdminPostFilter(event.target.value)}>
+            <option value="all">All posts</option>
+            <option value="stale">Stale posts, 48+ hours</option>
+            <option value="no-activity">No contact or matches</option>
+          </select>
+        </label>
+        <div className="admin-stat-list" aria-label="Admin board counts">
+          <span>
+            <strong>{filteredCount}</strong> shown
+          </span>
+          <span>
+            <strong>{totalCount}</strong> total
+          </span>
+          <span>
+            <strong>{adminStats.stale}</strong> stale
+          </span>
+          <span>
+            <strong>{adminStats.noActivity}</strong> no activity
+          </span>
+        </div>
+      </div>
+
+      <details className="admin-activity">
+        <summary>Recent admin activity</summary>
+        {activity.length ? (
+          <ul>
+            {activity.slice(0, 8).map((item) => (
+              <li key={item.id}>
+                <strong>{formatAdminAction(item)}</strong>
+                <span>{formatDateTime(item.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No admin actions recorded yet.</p>
+        )}
+      </details>
+    </section>
+  );
+}
+
+function formatAdminAction(item) {
+  const details = item.details || {};
+  if (item.action === "remove_post") {
+    const name = details.participant?.name || "Unknown post";
+    return `Removed ${name}`;
+  }
+  if (item.action === "update_group_status") {
+    const hostName = details.host_name || "Unknown post";
+    return `${hostName}: ${details.old_status || "unknown"} to ${details.new_status || "unknown"}`;
+  }
+  return item.action;
 }
 
 function AdminMfaPanel({ hasAdminMfaAccess, onVerified }) {
@@ -2212,9 +2455,12 @@ function EntryForm({
 function RideCard({
   canManageStatus = true,
   group,
+  isAdmin = false,
+  isSyncing = false,
   participants,
   selectedParticipant,
   match,
+  onAdminRemovePost,
   onInquire,
   onCommit,
   onStatusChange,
@@ -2370,6 +2616,36 @@ function RideCard({
           {!host?.email && !host?.phone && <span className="private-contact">Contact hidden</span>}
         </div>
       </div>
+
+      {isAdmin && host && (
+        <div className="admin-card-meta">
+          <div>
+            <span>Owner</span>
+            <strong>{host.email || "No email"}</strong>
+          </div>
+          <div>
+            <span>Created</span>
+            <strong>{formatDateTime(host.createdAt)}</strong>
+          </div>
+          <div>
+            <span>Updated</span>
+            <strong>{formatDateTime(getPostUpdatedAt(group, host)?.toISOString())}</strong>
+          </div>
+          <div>
+            <span>Status</span>
+            <strong>{effectiveStatus(group)}</strong>
+          </div>
+          <button
+            className="secondary-button admin-remove-button"
+            disabled={isSyncing}
+            type="button"
+            onClick={() => onAdminRemovePost?.(host.id)}
+          >
+            <Trash2 size={15} aria-hidden="true" />
+            Remove post
+          </button>
+        </div>
+      )}
 
       {hasDetails && (
         <details className="ride-details">

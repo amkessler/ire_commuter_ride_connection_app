@@ -20,6 +20,8 @@ export function fromDbParticipant(row) {
     maxPartySize: row.max_party_size ?? 0,
     availability: row.availability || {},
     notes: row.notes || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
     isDirectoryOnly: !row.email,
   };
 }
@@ -58,6 +60,8 @@ export function fromDbGroup(row, memberships = [], inquiries = []) {
       .map((inquiry) => inquiry.participant_id),
     status: row.status,
     availability: row.availability || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -79,10 +83,31 @@ export function toDbGroup(group, options = {}) {
   return dbGroup;
 }
 
+export function fromDbAdminActivity(row) {
+  return {
+    id: row.id,
+    actorUserId: row.actor_user_id,
+    action: row.action,
+    targetUserId: row.target_user_id,
+    targetParticipantId: row.target_participant_id,
+    targetGroupId: row.target_group_id,
+    details: row.details || {},
+    createdAt: row.created_at,
+  };
+}
+
 export async function fetchSupabaseBoard() {
   if (!supabase) throw new Error("Supabase is not configured.");
 
-  const [directoryResult, ownParticipantsResult, groupsResult, membershipsResult, inquiriesResult, roleResult] =
+  const [
+    directoryResult,
+    ownParticipantsResult,
+    groupsResult,
+    membershipsResult,
+    inquiriesResult,
+    roleResult,
+    adminActivityResult,
+  ] =
     await Promise.all([
       supabase.from("participant_directory").select("*").order("created_at", { ascending: true }),
       supabase.from("participants").select("*").order("created_at", { ascending: true }),
@@ -90,6 +115,7 @@ export async function fetchSupabaseBoard() {
       supabase.from("ride_memberships").select("*"),
       supabase.from("ride_inquiries").select("*"),
       supabase.rpc("get_my_role"),
+      supabase.from("admin_activity_log").select("*").order("created_at", { ascending: false }).limit(25),
     ]);
 
   const firstError = [
@@ -99,6 +125,7 @@ export async function fetchSupabaseBoard() {
     membershipsResult.error,
     inquiriesResult.error,
     roleResult.error,
+    adminActivityResult.error,
   ].find(Boolean);
 
   if (firstError) throw firstError;
@@ -117,6 +144,7 @@ export async function fetchSupabaseBoard() {
       fromDbGroup(row, membershipsResult.data, inquiriesResult.data),
     ),
     role: roleResult.data || "user",
+    adminActivity: (adminActivityResult.data || []).map(fromDbAdminActivity),
   };
 }
 
@@ -167,9 +195,28 @@ export async function saveGroupStatus(groupId, status) {
   if (error) throw error;
 }
 
+export async function adminUpdateGroupStatus(groupId, status, reason) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { error } = await supabase.rpc("admin_update_group_status", {
+    p_group_id: groupId,
+    p_status: status,
+    p_reason: reason || null,
+  });
+  if (error) throw error;
+}
+
 export async function deleteParticipant(participantId) {
   if (!supabase) throw new Error("Supabase is not configured.");
   const { error } = await supabase.from("participants").delete().eq("id", participantId);
+  if (error) throw error;
+}
+
+export async function adminRemoveParticipantPost(participantId, reason) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { error } = await supabase.rpc("admin_remove_participant_post", {
+    p_participant_id: participantId,
+    p_reason: reason || null,
+  });
   if (error) throw error;
 }
 

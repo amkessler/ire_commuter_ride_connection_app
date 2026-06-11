@@ -916,6 +916,45 @@ button:focus-visible {
   justify-content: flex-end;
 }
 
+.admin-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 9px;
+  background: #f8faf8;
+}
+
+.admin-card-meta div {
+  display: grid;
+  gap: 2px;
+  min-width: 110px;
+}
+
+.admin-card-meta span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.admin-card-meta strong {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.admin-remove-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  border-color: #e3c9c5;
+  background: #f7ecea;
+  color: #8f3934;
+}
+
 .contact-row {
   flex-wrap: wrap;
   gap: 8px;
@@ -1468,6 +1507,113 @@ button:focus-visible {
   text-transform: uppercase;
 }
 
+.admin-tools {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  border: 1px solid #d9e1dd;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8faf8;
+}
+
+.admin-tools-header,
+.admin-tool-grid,
+.admin-stat-list {
+  display: flex;
+  align-items: center;
+}
+
+.admin-tools-header {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.admin-tools-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.admin-tools-header p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.admin-tool-grid {
+  align-items: end;
+  gap: 12px;
+}
+
+.admin-tool-grid .field {
+  min-width: min(260px, 100%);
+}
+
+.admin-stat-list {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-stat-list span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #eef3ee;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.admin-stat-list strong {
+  color: var(--ink);
+}
+
+.admin-activity {
+  border-top: 1px solid #e2e8e4;
+  padding-top: 8px;
+}
+
+.admin-activity summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.admin-activity ul {
+  display: grid;
+  gap: 7px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-activity li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 7px;
+  padding: 7px 9px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.admin-activity li strong {
+  color: var(--ink);
+}
+
+.admin-activity p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .simple-best-strip {
   display: flex;
   flex-wrap: wrap;
@@ -1817,6 +1963,23 @@ button:focus-visible {
 
   .simple-app .board-controls {
     grid-template-columns: 1fr;
+  }
+
+  .admin-tools-header,
+  .admin-tool-grid,
+  .admin-card-meta {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-tools-header .secondary-button,
+  .admin-remove-button {
+    width: 100%;
+  }
+
+  .admin-remove-button {
+    justify-content: center;
+    margin-left: 0;
   }
 }
 
