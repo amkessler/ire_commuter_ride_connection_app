@@ -665,6 +665,14 @@ function matchCategory(score) {
   return { label: "Weak match", level: "weak" };
 }
 
+function getFriendlyAuthErrorMessage(error) {
+  const message = error?.message || "Unable to complete sign-in.";
+  if (/rate limit/i.test(message)) {
+    return "Supabase email rate limit exceeded. Please wait a few minutes before requesting another code.";
+  }
+  return message;
+}
+
 function App() {
   const [state, setState] = useState(loadInitialState);
   const [form, setForm] = useState(blankForm);
@@ -819,35 +827,39 @@ function App() {
   async function sendLoginCode(event) {
     event.preventDefault();
     if (!supabase) return;
+    const normalizedEmail = authEmail.trim().toLowerCase();
     setAppError("");
     setAuthMessage("");
     const { error } = await supabase.auth.signInWithOtp({
-      email: authEmail,
+      email: normalizedEmail,
       options: {
         shouldCreateUser: true,
         emailRedirectTo: window.location.origin,
       },
     });
     if (error) {
-      setAppError(error.message);
+      setAppError(getFriendlyAuthErrorMessage(error));
       return;
     }
+    setAuthEmail(normalizedEmail);
     setAuthMessage("Check your email for a one-time sign-in code.");
   }
 
   async function verifyLoginCode(event) {
     event.preventDefault();
     if (!supabase) return;
+    const normalizedEmail = authEmail.trim().toLowerCase();
     setAppError("");
     const { error } = await supabase.auth.verifyOtp({
-      email: authEmail,
-      token: authCode,
+      email: normalizedEmail,
+      token: authCode.trim(),
       type: "email",
     });
     if (error) {
-      setAppError(error.message);
+      setAppError(getFriendlyAuthErrorMessage(error));
       return;
     }
+    setAuthEmail(normalizedEmail);
     setAuthCode("");
     setAuthMessage("Signed in.");
   }

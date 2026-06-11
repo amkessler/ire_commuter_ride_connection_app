@@ -108,15 +108,18 @@ supabase db advisors --linked --type security --level info
 
 The app intentionally exposes three authenticated RPCs: `get_my_role`, `request_join_ride`, and `commit_to_ride`. `request_join_ride` records that contact/help was initiated, while `commit_to_ride` requires that prior contact marker and enforces the contact-first match rules. Both ride-action RPCs validate participant/group compatibility, ownership or admin permission, full groups, self-matches, and already-matched participants before changing data. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
 
-Regular users sign in by email one-time code. The hosted Supabase email template has been updated through the Management API to send `{{ .Token }}` instead of a magic sign-in link.
+Regular users sign in by email one-time code. The hosted Supabase email templates must send `{{ .Token }}` instead of a magic sign-in link. Supabase uses the `Magic Link / OTP` template for returning passwordless users and the `Confirm signup` template for first-time users, so both templates need to be configured for codes.
 
 Email code checklist:
 
 1. Open Supabase dashboard for `ire_commuter_rides`.
-2. Go to `Authentication` -> `Emails`.
-3. Open the confirmation/login email template used by passwordless email sign-in.
-4. Confirm the Magic Link / OTP template includes `{{ .Token }}` and does not rely on `{{ .ConfirmationURL }}`.
-5. Send a test login email and verify the received code works in the app's `One-time code` field.
+2. Go to `Authentication` -> `URL Configuration`.
+3. Set the production site URL to `https://ire-ride-connection-app.vercel.app`.
+4. Add redirect URLs for production and local testing, including `https://ire-ride-connection-app.vercel.app`, `http://localhost:5173`, and `http://localhost:3000` if older local auth links need to be tested.
+5. Go to `Authentication` -> `Emails`.
+6. Open `Magic Link / OTP` and confirm the template includes `{{ .Token }}` and does not rely on `{{ .ConfirmationURL }}`.
+7. Open `Confirm signup` and confirm that first-time users also receive `{{ .Token }}` instead of a confirmation link.
+8. Send a test login email for both a new email address and a returning email address, then verify the received code works in the app's `One-time code` field.
 
 Admins are controlled by `public.admin_users`. The user must sign in once before they can be
 made an admin, because that first sign-in creates their Supabase Auth user record.
