@@ -80,6 +80,16 @@ const corridors = [
     tone: "violet",
   },
   {
+    id: "woodbridge-springfield",
+    label: "Woodbridge / Springfield",
+    short: "Wood/Spring",
+    region: "VA",
+    route: "I-95 / I-395 / Springfield interchange",
+    x: 26,
+    y: 76,
+    tone: "cyan",
+  },
+  {
     id: "silver-spring-takoma",
     label: "Silver Spring / Takoma Park",
     short: "SS/Takoma",
@@ -114,8 +124,9 @@ const corridors = [
 const corridorAdjacency = {
   "dc-nw": ["silver-spring-takoma", "bethesda-rockville", "dc-ne", "arlington-alexandria"],
   "dc-ne": ["silver-spring-takoma", "dc-nw", "pg-county"],
-  "arlington-alexandria": ["fairfax-falls-church", "dc-nw", "pg-county"],
-  "fairfax-falls-church": ["arlington-alexandria", "bethesda-rockville"],
+  "arlington-alexandria": ["fairfax-falls-church", "woodbridge-springfield", "dc-nw", "pg-county"],
+  "fairfax-falls-church": ["arlington-alexandria", "woodbridge-springfield", "bethesda-rockville"],
+  "woodbridge-springfield": ["arlington-alexandria", "fairfax-falls-church"],
   "silver-spring-takoma": ["dc-nw", "dc-ne", "bethesda-rockville"],
   "bethesda-rockville": ["dc-nw", "silver-spring-takoma", "fairfax-falls-church"],
   "pg-county": ["dc-ne", "arlington-alexandria"],
@@ -1186,7 +1197,7 @@ function App() {
       <header className="simple-hero">
         <div>
           <p className="eyebrow">National Harbor commute board</p>
-          <h1>IRE Ride Connection</h1>
+          <h1>IRE Commuter Ride Connection</h1>
           <p>
             Post one ride profile, then contact people whose route and conference slots line up.
           </p>
@@ -1360,7 +1371,7 @@ function InstructionsModal({ onClose }) {
         <div className="instructions-modal-header">
           <div>
             <p className="eyebrow">Quick guide</p>
-            <h2 id="instructions-title">How to use IRE Ride Connection</h2>
+            <h2 id="instructions-title">How to use IRE Commuter Ride Connection</h2>
           </div>
           <button
             aria-label="Close instructions"
@@ -1549,8 +1560,8 @@ function AuthPanel({
             </button>
           </form>
           <div className="auth-expanded-actions">
-            <button className="secondary-button" type="button" onClick={returnToSampleMode}>
-              Continue with sample
+            <button className="secondary-button sample-return-button" type="button" onClick={returnToSampleMode}>
+              Stay in sample mode
             </button>
             <button className="secondary-button help-trigger" type="button" onClick={onOpenInstructions}>
               <CircleHelp size={16} aria-hidden="true" />

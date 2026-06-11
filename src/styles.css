@@ -13,6 +13,7 @@
   --green: #23795c;
   --orange: #b75d2a;
   --violet: #7760a8;
+  --cyan: #2a7378;
   --teal: #1f7f83;
   --red: #a64d57;
   --gold: #9c7721;
@@ -607,6 +608,10 @@ button:focus-visible {
 
 .tone-violet {
   color: var(--violet);
+}
+
+.tone-cyan {
+  color: var(--cyan);
 }
 
 .tone-teal {
@@ -1266,6 +1271,16 @@ button:focus-visible {
 
 .auth-expanded-actions .secondary-button {
   width: 100%;
+}
+
+.sample-return-button {
+  background: #f7ecea;
+  border-color: #e3c9c5;
+  color: #8f3934;
+}
+
+.sample-return-button:hover {
+  background: #f0dedb;
 }
 
 .simple-shell {

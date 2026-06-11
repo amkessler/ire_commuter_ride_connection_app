@@ -24,7 +24,7 @@ The workflow rules are:
 
 - `name`, `email`, `phone`
 - `neighborhood`
-- `corridor`: regional route zone such as `dc-nw`, `dc-ne`, `arlington-alexandria`, `silver-spring-takoma`, `bethesda-rockville`, `pg-county`, `fairfax-falls-church`
+- `corridor`: regional route zone such as `dc-nw`, `dc-ne`, `arlington-alexandria`, `fairfax-falls-church`, `woodbridge-springfield`, `silver-spring-takoma`, `bethesda-rockville`, `pg-county`
 - `intent`: `offer`, `need-seat`, `split-rideshare`, or `both`
 - `transportPreference`: `carpool`, `rideshare`, or `either`
 - `seatsAvailable`, `seatsNeeded`, and `maxPartySize`
