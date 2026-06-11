@@ -473,6 +473,22 @@ function overlapSlots(a, b) {
   return slots.filter((slot) => a?.[slot.id] && b?.[slot.id]);
 }
 
+function activeSlotIds(availability) {
+  return slots.filter((slot) => availability?.[slot.id]).map((slot) => slot.id);
+}
+
+function formatSlotIds(slotIds) {
+  const slotLabels = slots
+    .filter((slot) => slotIds.includes(slot.id))
+    .map((slot) => slot.label);
+  return slotLabels.length ? slotLabels.join(", ") : "";
+}
+
+function formatSlotSummary(slotIds) {
+  if (slotIds.length <= 2) return formatSlotIds(slotIds);
+  return `${slotIds.length} ${pluralize(slotIds.length, "slot")}`;
+}
+
 function formatSlots(availability) {
   const active = slots.filter((slot) => availability?.[slot.id]);
   if (!active.length) return "No slots listed";
@@ -548,47 +564,69 @@ function getGroupTypeMeta(type) {
 }
 
 function getGroupCounts(group) {
+  const groupSlotIds = activeSlotIds(group.availability);
+  const slotOpenSpots = groupSlotIds.map((slotId) => getGroupOpenSpotsForSlot(group, slotId));
+  const openSpots = slotOpenSpots.length ? Math.max(...slotOpenSpots) : 0;
+
   if (group.type === "carpool") {
-    const committed = group.riderIds.length;
-    const openSpots = Math.max(group.capacity - committed, 0);
+    const committed = Math.max(
+      0,
+      ...groupSlotIds.map((slotId) =>
+        group.riderIds.filter((riderId) => getMatchedSlotIds(group, riderId).includes(slotId)).length,
+      ),
+    );
     return {
       committed,
       openSpots,
       used: committed,
       total: group.capacity,
-      label: `${committed}/${group.capacity} carpool seats committed`,
-      openLabel: `${openSpots} open`,
+      label: `${committed}/${group.capacity} carpool seats committed by slot`,
+      openLabel: `${openSpots} open by slot`,
     };
   }
 
   if (group.type === "carpool-request") {
-    const matchedOffers = group.riderIds.length;
-    const stillNeeded = Math.max(group.capacity - matchedOffers, 0);
+    const matchedOffers = Math.max(
+      0,
+      ...groupSlotIds.map((slotId) =>
+        group.riderIds.filter((riderId) => getMatchedSlotIds(group, riderId).includes(slotId)).length,
+      ),
+    );
+    const stillNeeded = openSpots;
     return {
       committed: matchedOffers,
       openSpots: stillNeeded,
       used: matchedOffers,
       total: group.capacity,
-      label: `${group.capacity} carpool ${pluralize(group.capacity, "seat")} needed`,
-      openLabel: `${stillNeeded} still needed`,
+      label: `${group.capacity} carpool ${pluralize(group.capacity, "seat")} needed by slot`,
+      openLabel: `${stillNeeded} still needed by slot`,
     };
   }
 
-  const committed = group.riderIds.length + 1;
-  const openSpots = Math.max(group.capacity - committed, 0);
+  const committed = Math.max(
+    1,
+    ...groupSlotIds.map(
+      (slotId) => group.riderIds.filter((riderId) => getMatchedSlotIds(group, riderId).includes(slotId)).length + 1,
+    ),
+  );
   return {
     committed,
     openSpots,
     used: committed,
     total: group.capacity,
-    label: `${committed}/${group.capacity} riders in pool`,
-    openLabel: `${openSpots} open`,
+    label: `${committed}/${group.capacity} riders in pool by slot`,
+    openLabel: `${openSpots} open by slot`,
   };
 }
 
 function effectiveStatus(group) {
   const counts = getGroupCounts(group);
   if (counts.openSpots === 0) return "full";
+  if (group.status === "full") {
+    if (group.riderIds.length > 0) return "committed";
+    if (group.inquiries.length > 0) return "pending";
+    return "open";
+  }
   return group.status;
 }
 
@@ -624,6 +662,51 @@ function canParticipantActOnGroup(participant, group) {
   if (group.type === "carpool") return capabilities.wantsCarpoolSeat;
   if (group.type === "carpool-request") return capabilities.offersCarpool;
   return capabilities.wantsRideshare;
+}
+
+function getMatchedSlotIds(group, participantId) {
+  const storedSlotIds = group.matchedSlotsByParticipant?.[participantId] || [];
+  if (storedSlotIds.length) return storedSlotIds;
+  return group.riderIds.includes(participantId) ? activeSlotIds(group.availability) : [];
+}
+
+function getInquirySlotIds(group, participantId) {
+  const storedSlotIds = group.inquirySlotsByParticipant?.[participantId] || [];
+  if (storedSlotIds.length) return storedSlotIds;
+  return group.inquiries.includes(participantId) ? activeSlotIds(group.availability) : [];
+}
+
+function getGroupOpenSpotsForSlot(group, slotId) {
+  const matchedCount = group.riderIds.filter((riderId) => getMatchedSlotIds(group, riderId).includes(slotId)).length;
+  const organizerCount = group.type === "rideshare" ? 1 : 0;
+  return Math.max(group.capacity - matchedCount - organizerCount, 0);
+}
+
+function getSharedOpenSlotIds(group, participant) {
+  if (!participant) return [];
+  return overlapSlots(group.availability, participant.availability)
+    .map((slot) => slot.id)
+    .filter((slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0);
+}
+
+function getParticipantPairMatchedSlotIds(firstParticipantId, secondParticipantId, groups) {
+  const matchedSlotIds = new Set();
+
+  if (!firstParticipantId || !secondParticipantId || firstParticipantId === secondParticipantId) {
+    return [];
+  }
+
+  groups.forEach((group) => {
+    if (group.hostId === firstParticipantId && group.riderIds.includes(secondParticipantId)) {
+      getMatchedSlotIds(group, secondParticipantId).forEach((slotId) => matchedSlotIds.add(slotId));
+    }
+
+    if (group.hostId === secondParticipantId && group.riderIds.includes(firstParticipantId)) {
+      getMatchedSlotIds(group, firstParticipantId).forEach((slotId) => matchedSlotIds.add(slotId));
+    }
+  });
+
+  return slots.map((slot) => slot.id).filter((slotId) => matchedSlotIds.has(slotId));
 }
 
 function scoreGroupForParticipant(group, participant) {
@@ -756,13 +839,14 @@ function buildRideActivity(participant, groups, participants) {
       group.inquiries.forEach((inquiryId) => {
         const person = participantMap.get(inquiryId);
         if (!person) return;
-        if (group.riderIds.includes(person.id)) return;
+        const interestSlotIds = getInquirySlotIds(group, person.id);
+        if (!interestSlotIds.length) return;
         incoming.push({
           id: `incoming-${group.id}-${person.id}`,
           groupId: group.id,
           participantId: person.id,
           title: `${person.name} ${group.type === "carpool-request" ? "offered help" : "recorded contact"}`,
-          subtitle,
+          subtitle: `${subtitle}${interestSlotIds.length ? ` · ${formatSlotIds(interestSlotIds)}` : ""}`,
           tag: "Pending",
           canMarkMatch: group.type !== "carpool-request" && status !== "full",
         });
@@ -771,37 +855,45 @@ function buildRideActivity(participant, groups, participants) {
       group.riderIds.forEach((riderId) => {
         const person = participantMap.get(riderId);
         if (!person) return;
+        const matchedSlotIds = getMatchedSlotIds(group, person.id);
         matched.push({
           id: `hosted-match-${group.id}-${person.id}`,
           groupId: group.id,
           participantId: person.id,
           title: `Matched with ${person.name}`,
-          subtitle: groupMeta.title,
+          subtitle: `${groupMeta.title}${matchedSlotIds.length ? ` · ${formatSlotIds(matchedSlotIds)}` : ""}`,
           tag: "Matched",
         });
       });
       return;
     }
 
-    if (group.inquiries.includes(participant.id) && !group.riderIds.includes(participant.id)) {
-      outgoing.push({
-        id: `outgoing-${group.id}-${participant.id}`,
-        groupId: group.id,
-        participantId: participant.id,
-        title: `You contacted ${host?.name || "Unknown post"}`,
-        subtitle: `${groupMeta.title} · ${groupMeta.inquiredLabel}`,
-        tag: "Pending",
-        canMarkMatch: status !== "full" && (group.type === "rideshare" || group.type === "carpool-request"),
-      });
+    if (
+      host &&
+      group.inquiries.includes(participant.id)
+    ) {
+      const interestSlotIds = getInquirySlotIds(group, participant.id);
+      if (interestSlotIds.length) {
+        outgoing.push({
+          id: `outgoing-${group.id}-${participant.id}`,
+          groupId: group.id,
+          participantId: participant.id,
+          title: `You contacted ${host?.name || "Unknown post"}`,
+          subtitle: `${groupMeta.title} · ${groupMeta.inquiredLabel} · ${formatSlotIds(interestSlotIds)}`,
+          tag: "Pending",
+          canMarkMatch: status !== "full" && (group.type === "rideshare" || group.type === "carpool-request"),
+        });
+      }
     }
 
     if (group.riderIds.includes(participant.id)) {
+      const matchedSlotIds = getMatchedSlotIds(group, participant.id);
       matched.push({
         id: `joined-match-${group.id}-${participant.id}`,
         groupId: group.id,
         participantId: participant.id,
         title: `Matched with ${host?.name || "Unknown post"}`,
-        subtitle: groupMeta.title,
+        subtitle: `${groupMeta.title}${matchedSlotIds.length ? ` · ${formatSlotIds(matchedSlotIds)}` : ""}`,
         tag: "Matched",
       });
     }
@@ -832,6 +924,7 @@ function App() {
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
   const [adminActivity, setAdminActivity] = useState([]);
   const [highlightedGroupId, setHighlightedGroupId] = useState("");
+  const [slotAction, setSlotAction] = useState(null);
   const boardRequestId = useRef(0);
 
   const { participants, groups } = state;
@@ -1223,17 +1316,104 @@ function App() {
     });
   }
 
-  async function inquire(groupId) {
+  function openInterestSlotAction(groupId) {
+    if (!selectedParticipant) return;
+    const group = groups.find((item) => item.id === groupId);
+    const host = participants.find((participant) => participant.id === group?.hostId);
+    if (!group || !host) return;
+    const alreadyMatchedSlotIds = getMatchedSlotIds(group, selectedParticipant.id);
+    const eligibleSlotIds = getSharedOpenSlotIds(group, selectedParticipant).filter(
+      (slotId) => !alreadyMatchedSlotIds.includes(slotId),
+    );
+    const currentInterestSlotIds = getInquirySlotIds(group, selectedParticipant.id).filter((slotId) =>
+      eligibleSlotIds.includes(slotId),
+    );
+
+    if (!eligibleSlotIds.length) {
+      setAppError("No shared open conference slots are available for this post.");
+      return;
+    }
+
+    setSlotAction({
+      mode: "interest",
+      groupId,
+      participantId: selectedParticipant.id,
+      title: `Record interest in ${host.name}'s ${getGroupTypeMeta(group.type).title.toLowerCase()}`,
+      description: "Choose only the conference trip slots you actually want to discuss.",
+      slotIds: eligibleSlotIds,
+      selectedSlotIds: currentInterestSlotIds.length ? currentInterestSlotIds : eligibleSlotIds,
+      submitLabel: currentInterestSlotIds.length ? "Update interest" : "Record interest",
+    });
+  }
+
+  function openMatchSlotAction(groupId, participantIdToMatch = selectedParticipant?.id) {
+    const group = groups.find((item) => item.id === groupId);
+    const participantToMatch = participants.find((participant) => participant.id === participantIdToMatch);
+    if (!group || !participantToMatch) return;
+    const pendingSlotIds = getInquirySlotIds(group, participantIdToMatch).filter(
+      (slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0,
+    );
+
+    if (!pendingSlotIds.length) {
+      setAppError("No pending open conference slots are available to mark as matched.");
+      return;
+    }
+
+    setSlotAction({
+      mode: "match",
+      groupId,
+      participantId: participantIdToMatch,
+      title: `Mark matched with ${participantToMatch.name}`,
+      description: "Choose only the slots everyone has agreed to. Other pending slots stay pending.",
+      slotIds: pendingSlotIds,
+      selectedSlotIds: pendingSlotIds,
+      submitLabel: "Mark selected matched",
+    });
+  }
+
+  function closeSlotAction() {
+    setSlotAction(null);
+  }
+
+  function toggleSlotActionSelection(slotId) {
+    setSlotAction((current) => {
+      if (!current) return current;
+      const selected = new Set(current.selectedSlotIds);
+      if (selected.has(slotId)) {
+        selected.delete(slotId);
+      } else {
+        selected.add(slotId);
+      }
+      return {
+        ...current,
+        selectedSlotIds: current.slotIds.filter((candidateSlotId) => selected.has(candidateSlotId)),
+      };
+    });
+  }
+
+  async function submitSlotAction() {
+    if (!slotAction || !slotAction.selectedSlotIds.length) return;
+    const action = slotAction;
+    if (action.mode === "interest") {
+      await inquire(action.groupId, action.selectedSlotIds);
+    } else {
+      await commit(action.groupId, action.participantId, action.selectedSlotIds);
+    }
+    closeSlotAction();
+  }
+
+  async function inquire(groupId, slotIds = []) {
     if (!selectedParticipant) return;
     const group = groups.find((item) => item.id === groupId);
     if (!group || group.hostId === selectedParticipant.id) return;
     if (!canParticipantActOnGroup(selectedParticipant, group)) return;
+    if (!slotIds.length) return;
 
     if (session && supabase) {
       setIsSyncing(true);
       setAppError("");
       try {
-        await requestJoinRide(groupId, selectedParticipant.id);
+        await requestJoinRide(groupId, selectedParticipant.id, slotIds);
         try {
           await sendRideNotification(groupId, selectedParticipant.id);
         } catch (notificationError) {
@@ -1252,15 +1432,20 @@ function App() {
     inquiries.add(selectedParticipant.id);
     updateGroup(groupId, {
       inquiries: Array.from(inquiries),
+      inquirySlotsByParticipant: {
+        ...(group.inquirySlotsByParticipant || {}),
+        [selectedParticipant.id]: slotIds,
+      },
       status: group.status === "open" ? "pending" : group.status,
     });
   }
 
-  async function commit(groupId, participantIdToMatch = selectedParticipant?.id) {
+  async function commit(groupId, participantIdToMatch = selectedParticipant?.id, slotIds = []) {
     if (!selectedParticipant) return;
     const group = groups.find((item) => item.id === groupId);
     const participantToMatch = participants.find((participant) => participant.id === participantIdToMatch);
     if (!group || !participantToMatch) return;
+    if (!slotIds.length) return;
 
     const isHost = group.hostId === selectedParticipant.id;
     const isSelfMatch = participantIdToMatch === selectedParticipant.id;
@@ -1279,7 +1464,7 @@ function App() {
       setIsSyncing(true);
       setAppError("");
       try {
-        await commitToRide(groupId, participantIdToMatch);
+        await commitToRide(groupId, participantIdToMatch, slotIds);
         await loadRemoteBoard(session);
       } catch (error) {
         setAppError(error.message || "Unable to mark match.");
@@ -1291,16 +1476,38 @@ function App() {
 
     const riders = new Set(group.riderIds);
     riders.add(participantIdToMatch);
-    const inquiries = group.inquiries.filter((id) => id !== participantIdToMatch);
+    const pendingSlotIds = getInquirySlotIds(group, participantIdToMatch);
+    const remainingInterestSlotIds = pendingSlotIds.filter((slotId) => !slotIds.includes(slotId));
+    const inquiries =
+      remainingInterestSlotIds.length > 0
+        ? group.inquiries
+        : group.inquiries.filter((id) => id !== participantIdToMatch);
+    const existingMatchedSlotIds = group.matchedSlotsByParticipant?.[participantIdToMatch] || [];
+    const matchedSlotIds = Array.from(new Set([...existingMatchedSlotIds, ...slotIds]));
+    const nextInquirySlotsByParticipant = {
+      ...(group.inquirySlotsByParticipant || {}),
+    };
+    if (remainingInterestSlotIds.length > 0) {
+      nextInquirySlotsByParticipant[participantIdToMatch] = remainingInterestSlotIds;
+    } else {
+      delete nextInquirySlotsByParticipant[participantIdToMatch];
+    }
     const nextGroup = {
       ...group,
       riderIds: Array.from(riders),
       inquiries,
+      inquirySlotsByParticipant: nextInquirySlotsByParticipant,
+      matchedSlotsByParticipant: {
+        ...(group.matchedSlotsByParticipant || {}),
+        [participantIdToMatch]: matchedSlotIds,
+      },
     };
     const nextStatus = getGroupCounts(nextGroup).openSpots === 0 ? "full" : "committed";
     updateGroup(groupId, {
       riderIds: nextGroup.riderIds,
       inquiries,
+      inquirySlotsByParticipant: nextGroup.inquirySlotsByParticipant,
+      matchedSlotsByParticipant: nextGroup.matchedSlotsByParticipant,
       status: nextStatus,
     });
   }
@@ -1589,7 +1796,7 @@ function App() {
             <RideActivityPanel
               activity={rideActivity}
               isSyncing={isSyncing}
-              onMarkMatched={(groupId, participantId) => commit(groupId, participantId)}
+              onMarkMatched={openMatchSlotAction}
               onViewGroup={focusRideCard}
             />
           )}
@@ -1667,12 +1874,13 @@ function App() {
               filteredGroups.map((group) => (
                 <RideCard
                   key={group.id}
+                  allGroups={groups}
                   group={group}
                   participants={participants}
                   selectedParticipant={selectedParticipant}
                   match={selectedParticipant ? scoreGroupForParticipant(group, selectedParticipant) : null}
-                  onInquire={inquire}
-                  onCommit={commit}
+                  onInquire={openInterestSlotAction}
+                  onCommit={openMatchSlotAction}
                   onAdminRemovePost={adminRemovePost}
                   onStatusChange={(status) => updateGroup(group.id, { status })}
                   isAdmin={hasAdminAccess}
@@ -1694,6 +1902,109 @@ function App() {
       {isInstructionsOpen && (
         <InstructionsModal onClose={closeInstructions} />
       )}
+      {slotAction && (
+        <SlotActionModal
+          action={slotAction}
+          isSyncing={isSyncing}
+          onClose={closeSlotAction}
+          onSubmit={submitSlotAction}
+          onToggleSlot={toggleSlotActionSelection}
+        />
+      )}
+    </div>
+  );
+}
+
+function SlotActionModal({ action, isSyncing, onClose, onSubmit, onToggleSlot }) {
+  const modalRef = useRef(null);
+  const submitButtonRef = useRef(null);
+  const previousFocusRef = useRef(null);
+  const selectedCount = action.selectedSlotIds.length;
+
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    submitButtonRef.current?.focus();
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocusRef.current?.focus?.();
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        aria-labelledby="slot-action-title"
+        aria-modal="true"
+        className="instructions-modal slot-action-modal"
+        ref={modalRef}
+        role="dialog"
+        tabIndex={-1}
+      >
+        <div className="instructions-modal-header">
+          <div>
+            <p className="eyebrow">{action.mode === "match" ? "Confirm match" : "Record interest"}</p>
+            <h2 id="slot-action-title">{action.title}</h2>
+          </div>
+          <button aria-label="Close slot chooser" className="icon-button" type="button" onClick={onClose}>
+            <X size={20} aria-hidden="true" />
+          </button>
+        </div>
+
+        <p className="slot-action-copy">{action.description}</p>
+
+        <div className="slot-action-grid">
+          {action.slotIds.map((slotId) => {
+            const slot = slots.find((item) => item.id === slotId);
+            const checked = action.selectedSlotIds.includes(slotId);
+            return (
+              <label className="slot-toggle" key={slotId}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onToggleSlot(slotId)}
+                />
+                <span className="slot-label">
+                  <strong>{slot?.label || slotId}</strong>
+                  <small>{slot?.direction || "Conference trip"}</small>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+
+        <div className="slot-action-footer">
+          <button className="secondary-button" type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="primary-button"
+            disabled={isSyncing || selectedCount === 0}
+            ref={submitButtonRef}
+            type="button"
+            onClick={onSubmit}
+          >
+            <CheckCircle2 size={16} aria-hidden="true" />
+            {isSyncing ? "Saving..." : action.submitLabel}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -2666,6 +2977,7 @@ function EntryForm({
 }
 
 function RideCard({
+  allGroups = [],
   canManageStatus = true,
   group,
   isAdmin = false,
@@ -2692,15 +3004,55 @@ function RideCard({
   const status = effectiveStatus(group);
   const groupMeta = getGroupTypeMeta(group.type);
   const GroupIcon = groupMeta.Icon;
-  const alreadyRiding = selectedParticipant && group.riderIds.includes(selectedParticipant.id);
   const alreadyInquired = selectedParticipant && group.inquiries.includes(selectedParticipant.id);
   const isHost = selectedParticipant && selectedParticipant.id === group.hostId;
+  const directMatch = Boolean(selectedParticipant && group.riderIds.includes(selectedParticipant.id));
+  const sharedSlotIds = selectedParticipant
+    ? overlapSlots(group.availability, selectedParticipant.availability).map((slot) => slot.id)
+    : [];
+  const directMatchedSlotIds = selectedParticipant ? getMatchedSlotIds(group, selectedParticipant.id) : [];
+  const pendingSlotIds = selectedParticipant ? getInquirySlotIds(group, selectedParticipant.id) : [];
+  const pendingSlotsText = formatSlotIds(pendingSlotIds);
+  const pairMatchedSlotIds =
+    selectedParticipant && host
+      ? getParticipantPairMatchedSlotIds(selectedParticipant.id, host.id, allGroups).filter((slotId) =>
+          sharedSlotIds.includes(slotId),
+        )
+      : [];
+  const visibleMatchedSlotIds = directMatchedSlotIds.length ? directMatchedSlotIds : pairMatchedSlotIds;
+  const visibleMatchedSlotsText = formatSlotIds(visibleMatchedSlotIds);
+  const visibleMatchedSlotsSummary = formatSlotSummary(visibleMatchedSlotIds);
+  const hasMatchedSlotContext = visibleMatchedSlotIds.length > 0;
+  const showsMatchedState = directMatch || hasMatchedSlotContext;
+  const groupSlotIds = activeSlotIds(group.availability);
+  const unmatchedInquiries = inquiries.filter((rider) =>
+    getInquirySlotIds(group, rider.id).some((slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0),
+  );
+  const unmatchedSharedSlotIds = sharedSlotIds.filter((slotId) => !visibleMatchedSlotIds.includes(slotId));
+  const unmatchedSharedSlotsText = formatSlotIds(unmatchedSharedSlotIds);
+  const pendingSlotsSummary = formatSlotSummary(pendingSlotIds);
+  const interestEligibleSlotIds = sharedSlotIds.filter(
+    (slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0 && !directMatchedSlotIds.includes(slotId),
+  );
+  const matchedStatusText = visibleMatchedSlotsText
+    ? `Matched for ${visibleMatchedSlotsSummary}`
+    : groupMeta.committedButtonLabel;
+  const inquiryMatchedSlotsByParticipant = Object.fromEntries(
+    inquiries.map((rider) => [
+      rider.id,
+      host
+        ? getParticipantPairMatchedSlotIds(host.id, rider.id, allGroups).filter((slotId) =>
+            groupSlotIds.includes(slotId),
+          )
+        : [],
+    ]),
+  );
   const canInquire =
     selectedParticipant &&
     !isHost &&
-    !alreadyRiding &&
     !alreadyInquired &&
     status !== "full" &&
+    interestEligibleSlotIds.length > 0 &&
     canParticipantActOnGroup(selectedParticipant, group);
   const hasContactMethod = Boolean(host?.email || host?.phone);
   const hasRevealedContact = revealedContacts.email || revealedContacts.phone;
@@ -2709,7 +3061,7 @@ function RideCard({
     selectedParticipant &&
     !isHost &&
     alreadyInquired &&
-    !alreadyRiding &&
+    pendingSlotIds.length > 0 &&
     status !== "full" &&
     (group.type === "rideshare" || group.type === "carpool-request") &&
     canParticipantActOnGroup(selectedParticipant, group);
@@ -2718,15 +3070,19 @@ function RideCard({
     canManageStatus &&
     status !== "full" &&
     group.type !== "carpool-request" &&
-    inquiries.length > 0;
-  const footerHostMatch = hostCanMarkInquiries && inquiries.length === 1 ? inquiries[0] : null;
+    unmatchedInquiries.length > 0;
+  const footerHostMatch = hostCanMarkInquiries && unmatchedInquiries.length === 1 ? unmatchedInquiries[0] : null;
   const canMarkMatchFromFooter = canSelfMarkMatch || Boolean(footerHostMatch);
   const footerMatchParticipantId = footerHostMatch?.id;
   const hasActivity = riders.length > 0 || inquiries.length > 0;
   const hasDetails = Boolean(host?.notes || hasActivity);
   let contactStatusText = "Not a fit";
-  if (alreadyRiding) {
-    contactStatusText = groupMeta.committedButtonLabel;
+  if (pendingSlotIds.length && showsMatchedState) {
+    contactStatusText = `Matched: ${visibleMatchedSlotsSummary}; pending: ${pendingSlotsSummary}`;
+  } else if (pendingSlotIds.length) {
+    contactStatusText = `${groupMeta.inquiredLabel} for ${pendingSlotsSummary}`;
+  } else if (showsMatchedState) {
+    contactStatusText = matchedStatusText;
   } else if (alreadyInquired || footerHostMatch) {
     contactStatusText = groupMeta.inquiredLabel;
   } else if (isHost) {
@@ -2740,10 +3096,18 @@ function RideCard({
   }
 
   let actionGuidance = "This does not match your current ride plan.";
-  if (alreadyRiding || status === "committed") {
-    actionGuidance = "This match is recorded.";
+  if (pendingSlotIds.length && showsMatchedState) {
+    actionGuidance = `Matched for ${visibleMatchedSlotsText}. Still pending: ${pendingSlotsText}.`;
   } else if (canMarkMatchFromFooter) {
-    actionGuidance = "Record the match after everyone agrees.";
+    actionGuidance = "Choose only the slots everyone has agreed to match.";
+  } else if (pendingSlotIds.length && group.type === "carpool") {
+    actionGuidance = `Contact noted for ${pendingSlotsText}. The driver can mark agreed slots.`;
+  } else if (pendingSlotIds.length) {
+    actionGuidance = `Contact noted for ${pendingSlotsText}. Mark agreed slots after everyone confirms.`;
+  } else if (showsMatchedState && unmatchedSharedSlotsText) {
+    actionGuidance = `Matched for ${visibleMatchedSlotsText}. Coordinate separately for ${unmatchedSharedSlotsText}.`;
+  } else if (showsMatchedState) {
+    actionGuidance = "This match is recorded.";
   } else if (alreadyInquired && group.type === "carpool") {
     actionGuidance = "Contact noted. The driver can mark the match.";
   } else if (alreadyInquired) {
@@ -2872,23 +3236,46 @@ function RideCard({
             {hasActivity && (
               <div className="simple-activity">
                 {riders.length > 0 && (
-                  <span>
-                    <strong>{groupMeta.committedLabel}</strong> {riders.map((rider) => rider.name).join(", ")}
-                  </span>
+                  <div className="inquiry-list">
+                    <strong>{groupMeta.committedLabel}</strong>
+                    {riders.map((rider) => (
+                      <span className="inquiry-item" key={rider.id}>
+                        {rider.name}
+                        <span className="activity-tag matched">
+                          {formatSlotIds(getMatchedSlotIds(group, rider.id))}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
                 )}
                 {inquiries.length > 0 && (
                   <div className="inquiry-list">
                     <strong>{groupMeta.inquiriesLabel}</strong>
-                    {inquiries.map((rider) => (
-                      <span className="inquiry-item" key={rider.id}>
-                        {rider.name}
-                        {hostCanMarkInquiries && !footerHostMatch && (
-                          <button className="text-button" type="button" onClick={() => onCommit(group.id, rider.id)}>
-                            Mark matched
-                          </button>
-                        )}
-                      </span>
-                    ))}
+                    {inquiries.map((rider) => {
+                      const riderPendingSlotIds = getInquirySlotIds(group, rider.id);
+                      return (
+                        <span className="inquiry-item" key={rider.id}>
+                          {rider.name}
+                          {riderPendingSlotIds.length > 0 && (
+                            <span className="activity-tag pending">
+                              Pending for {formatSlotIds(riderPendingSlotIds)}
+                            </span>
+                          )}
+                          {inquiryMatchedSlotsByParticipant[rider.id]?.length > 0 && (
+                            <span className="activity-tag matched">
+                              Matched for {formatSlotIds(inquiryMatchedSlotsByParticipant[rider.id])}
+                            </span>
+                          )}
+                          {hostCanMarkInquiries &&
+                            !footerHostMatch &&
+                            riderPendingSlotIds.some((slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0) && (
+                            <button className="text-button" type="button" onClick={() => onCommit(group.id, rider.id)}>
+                              Mark matched
+                            </button>
+                          )}
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -2904,8 +3291,8 @@ function RideCard({
             {groupMeta.inquireLabel}
           </button>
         ) : (
-          <span className={`action-status${alreadyRiding ? " is-matched" : ""}`}>
-            {(alreadyRiding || alreadyInquired) && <CheckCircle2 size={15} aria-hidden="true" />}
+          <span className={`action-status${showsMatchedState ? " is-matched" : ""}`}>
+            {(showsMatchedState || alreadyInquired) && <CheckCircle2 size={15} aria-hidden="true" />}
             {contactStatusText}
           </span>
         )}

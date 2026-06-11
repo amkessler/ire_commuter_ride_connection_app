@@ -45,6 +45,9 @@ export function toDbParticipant(participant, userId) {
 }
 
 export function fromDbGroup(row, memberships = [], inquiries = []) {
+  const groupMemberships = memberships.filter((membership) => membership.group_id === row.id);
+  const groupInquiries = inquiries.filter((inquiry) => inquiry.group_id === row.id);
+
   return {
     id: row.id,
     hostId: row.host_participant_id,
@@ -52,12 +55,20 @@ export function fromDbGroup(row, memberships = [], inquiries = []) {
     corridor: row.corridor,
     routeFlexibility: row.route_flexibility,
     capacity: row.capacity,
-    riderIds: memberships
-      .filter((membership) => membership.group_id === row.id)
-      .map((membership) => membership.participant_id),
-    inquiries: inquiries
-      .filter((inquiry) => inquiry.group_id === row.id)
-      .map((inquiry) => inquiry.participant_id),
+    riderIds: groupMemberships.map((membership) => membership.participant_id),
+    matchedSlotsByParticipant: Object.fromEntries(
+      groupMemberships.map((membership) => [
+        membership.participant_id,
+        Array.isArray(membership.matched_slots) ? membership.matched_slots : [],
+      ]),
+    ),
+    inquiries: groupInquiries.map((inquiry) => inquiry.participant_id),
+    inquirySlotsByParticipant: Object.fromEntries(
+      groupInquiries.map((inquiry) => [
+        inquiry.participant_id,
+        Array.isArray(inquiry.interest_slots) ? inquiry.interest_slots : [],
+      ]),
+    ),
     status: row.status,
     availability: row.availability || {},
     createdAt: row.created_at,
@@ -220,11 +231,12 @@ export async function adminRemoveParticipantPost(participantId, reason) {
   if (error) throw error;
 }
 
-export async function requestJoinRide(groupId, participantId) {
+export async function requestJoinRide(groupId, participantId, slotIds) {
   if (!supabase) throw new Error("Supabase is not configured.");
   const { error } = await supabase.rpc("request_join_ride", {
     p_group_id: groupId,
     p_participant_id: participantId,
+    p_slot_ids: slotIds,
   });
   if (error) throw error;
 }
@@ -240,11 +252,12 @@ export async function sendRideNotification(groupId, participantId) {
   if (error) throw error;
 }
 
-export async function commitToRide(groupId, participantId) {
+export async function commitToRide(groupId, participantId, slotIds) {
   if (!supabase) throw new Error("Supabase is not configured.");
   const { error } = await supabase.rpc("commit_to_ride", {
     p_group_id: groupId,
     p_participant_id: participantId,
+    p_slot_ids: slotIds,
   });
   if (error) throw error;
 }
