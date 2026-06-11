@@ -48,7 +48,7 @@ minimum_password_length = 6
 password_requirements = ""
 
 [auth.rate_limit]
-email_sent = 30
+email_sent = 100
 sms_sent = 30
 anonymous_users = 30
 token_refresh = 150

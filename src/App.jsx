@@ -668,7 +668,7 @@ function matchCategory(score) {
 function getFriendlyAuthErrorMessage(error) {
   const message = error?.message || "Unable to complete sign-in.";
   if (/rate limit/i.test(message)) {
-    return "Supabase email rate limit exceeded. Please wait a few minutes before requesting another code.";
+    return "Email send limit reached. Please wait before requesting another code.";
   }
   return message;
 }
