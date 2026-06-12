@@ -1891,6 +1891,19 @@ button:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
 }
 
+@media (min-width: 760px) {
+  .simple-ride-grid {
+    display: block;
+    columns: 2 300px;
+    column-gap: 14px;
+  }
+
+  .simple-ride-grid > .ride-card {
+    break-inside: avoid;
+    margin-bottom: 14px;
+  }
+}
+
 .simple-app .ride-card {
   gap: 10px;
   border-top-width: 4px;
