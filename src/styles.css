@@ -1961,6 +1961,42 @@ button:focus-visible {
   width: 100%;
 }
 
+.fit-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid #ecd8ad;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #735315;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.fit-warning svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.fit-warning div {
+  display: grid;
+  gap: 2px;
+}
+
+.fit-warning strong {
+  color: #5f430e;
+  font-size: 0.86rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.fit-warning span {
+  color: #735315;
+  font-weight: 800;
+}
+
 .action-status {
   display: flex;
   align-items: center;

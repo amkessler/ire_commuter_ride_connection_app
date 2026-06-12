@@ -690,21 +690,18 @@ function getGroupOpenSpotsForSlot(group, slotId) {
   return Math.max(group.capacity - matchedCount - organizerCount, 0);
 }
 
-function getSharedOpenSlotIds(group, participant) {
-  if (!participant) return [];
-  return overlapSlots(group.availability, participant.availability)
-    .map((slot) => slot.id)
-    .filter((slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0);
+function getGroupOpenSlotIds(group) {
+  return activeSlotIds(group.availability).filter((slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0);
 }
 
 function getSavableSlotIds(group, participant, host, groups) {
   if (!participant || !host) return [];
-  const sharedOpenSlotIds = getSharedOpenSlotIds(group, participant);
+  const openSlotIds = getGroupOpenSlotIds(group);
   const directMatchedSlotIds = getMatchedSlotIds(group, participant.id);
   const pairMatchedSlotIds = getParticipantPairMatchedSlotIds(participant.id, host.id, groups);
   const pendingSlotIds = getInquirySlotIds(group, participant.id);
   const unavailableSlotIds = new Set([...directMatchedSlotIds, ...pairMatchedSlotIds, ...pendingSlotIds]);
-  return sharedOpenSlotIds.filter((slotId) => !unavailableSlotIds.has(slotId));
+  return openSlotIds.filter((slotId) => !unavailableSlotIds.has(slotId));
 }
 
 function getParticipantPairMatchedSlotIds(firstParticipantId, secondParticipantId, groups) {
@@ -1357,24 +1354,24 @@ function App() {
     const group = groups.find((item) => item.id === groupId);
     const host = participants.find((participant) => participant.id === group?.hostId);
     if (!group || !host) return;
-    const sharedOpenSlotIds = getSharedOpenSlotIds(group, selectedParticipant);
+    const openSlotIds = getGroupOpenSlotIds(group);
     const directMatchedSlotIds = getMatchedSlotIds(group, selectedParticipant.id);
     const pairMatchedSlotIds = getParticipantPairMatchedSlotIds(selectedParticipant.id, host.id, groups);
     const alreadyMatchedSlotIds = new Set([...directMatchedSlotIds, ...pairMatchedSlotIds]);
-    const eligibleSlotIds = sharedOpenSlotIds.filter(
+    const eligibleSlotIds = openSlotIds.filter(
       (slotId) => !alreadyMatchedSlotIds.has(slotId),
     );
     const currentInterestSlotIds = getInquirySlotIds(group, selectedParticipant.id).filter((slotId) =>
       eligibleSlotIds.includes(slotId),
     );
 
-    if (!sharedOpenSlotIds.length) {
-      setAppError("No shared open conference slots are available for this post.");
+    if (!openSlotIds.length) {
+      setAppError("No open conference slots are available for this post.");
       return;
     }
 
     if (!eligibleSlotIds.length) {
-      setAppError("All shared open conference slots are already matched with this person.");
+      setAppError("All open conference slots are already matched with this person.");
       return;
     }
 
@@ -1397,19 +1394,19 @@ function App() {
     const group = groups.find((item) => item.id === groupId);
     const host = participants.find((participant) => participant.id === group?.hostId);
     if (!group || !host) return;
-    const sharedOpenSlotIds = getSharedOpenSlotIds(group, selectedParticipant);
+    const openSlotIds = getGroupOpenSlotIds(group);
     const eligibleSlotIds = getSavableSlotIds(group, selectedParticipant, host, groups);
     const currentSavedSlotIds = getSavedSlotIds(group, selectedParticipant.id).filter((slotId) =>
       eligibleSlotIds.includes(slotId),
     );
 
-    if (!sharedOpenSlotIds.length) {
-      setAppError("No shared open conference slots are available for this post.");
+    if (!openSlotIds.length) {
+      setAppError("No open conference slots are available for this post.");
       return;
     }
 
     if (!eligibleSlotIds.length) {
-      setAppError("All shared open conference slots are already pending or matched.");
+      setAppError("All open conference slots are already pending or matched.");
       return;
     }
 
@@ -1493,7 +1490,6 @@ function App() {
     if (!selectedParticipant) return;
     const group = groups.find((item) => item.id === groupId);
     if (!group || group.hostId === selectedParticipant.id) return;
-    if (!canParticipantActOnGroup(selectedParticipant, group)) return;
 
     if (session && supabase) {
       setIsSyncing(true);
@@ -1532,7 +1528,6 @@ function App() {
     if (!selectedParticipant) return;
     const group = groups.find((item) => item.id === groupId);
     if (!group || group.hostId === selectedParticipant.id) return;
-    if (!canParticipantActOnGroup(selectedParticipant, group)) return;
     if (!slotIds.length) return;
 
     if (session && supabase) {
@@ -1604,9 +1599,7 @@ function App() {
       hasAdminAccess ||
       (group.type === "carpool" && isHost) ||
       (group.type === "rideshare" && (isHost || isSelfMatch)) ||
-      (group.type === "carpool-request" &&
-        isSelfMatch &&
-        canParticipantActOnGroup(selectedParticipant, group));
+      (group.type === "carpool-request" && isSelfMatch);
 
     if (!hasInquiry || !actorCanMarkMatch) return;
 
@@ -3185,14 +3178,13 @@ function RideCard({
   const sharedSlotIds = selectedParticipant
     ? overlapSlots(group.availability, selectedParticipant.availability).map((slot) => slot.id)
     : [];
+  const groupOpenSlotIds = getGroupOpenSlotIds(group);
   const directMatchedSlotIds = selectedParticipant ? getMatchedSlotIds(group, selectedParticipant.id) : [];
   const pendingSlotIds = selectedParticipant ? getInquirySlotIds(group, selectedParticipant.id) : [];
   const pendingSlotsText = formatSlotIds(pendingSlotIds);
   const pairMatchedSlotIds =
     selectedParticipant && host
-      ? getParticipantPairMatchedSlotIds(selectedParticipant.id, host.id, allGroups).filter((slotId) =>
-          sharedSlotIds.includes(slotId),
-        )
+      ? getParticipantPairMatchedSlotIds(selectedParticipant.id, host.id, allGroups)
       : [];
   const visibleMatchedSlotIds = sharedSlotIds.filter(
     (slotId) => directMatchedSlotIds.includes(slotId) || pairMatchedSlotIds.includes(slotId),
@@ -3208,9 +3200,8 @@ function RideCard({
   const unmatchedSharedSlotIds = sharedSlotIds.filter((slotId) => !visibleMatchedSlotIds.includes(slotId));
   const unmatchedSharedSlotsText = formatSlotIds(unmatchedSharedSlotIds);
   const pendingSlotsSummary = formatSlotSummary(pendingSlotIds);
-  const interestEligibleSlotIds = sharedSlotIds.filter(
-    (slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0 && !visibleMatchedSlotIds.includes(slotId),
-  );
+  const matchedOrPairedSlotIds = new Set([...directMatchedSlotIds, ...pairMatchedSlotIds]);
+  const interestEligibleSlotIds = groupOpenSlotIds.filter((slotId) => !matchedOrPairedSlotIds.has(slotId));
   const savableSlotIds = selectedParticipant && host
     ? getSavableSlotIds(group, selectedParticipant, host, allGroups)
     : [];
@@ -3238,24 +3229,21 @@ function RideCard({
     !isHost &&
     !alreadyInquired &&
     status !== "full" &&
-    savableSlotIds.length > 0 &&
-    canActOnGroup;
+    savableSlotIds.length > 0;
   const canUpdateInterest =
     selectedParticipant &&
     !isHost &&
     alreadyInquired &&
     pendingSlotIds.length > 0 &&
     status !== "full" &&
-    interestEligibleSlotIds.length > 0 &&
-    canActOnGroup;
+    interestEligibleSlotIds.length > 0;
   const canInquire = canStartInterest;
   const canManageSavedRide =
     selectedParticipant &&
     !isHost &&
     !alreadyInquired &&
     status !== "full" &&
-    savableSlotIds.length > 0 &&
-    canActOnGroup;
+    savableSlotIds.length > 0;
   const hasContactMethod = Boolean(host?.email || host?.phone);
   const hasRevealedContact = revealedContacts.email || revealedContacts.phone;
   const canRecordContact = canInquire && hasRevealedContact;
@@ -3265,8 +3253,7 @@ function RideCard({
     alreadyInquired &&
     pendingSlotIds.length > 0 &&
     status !== "full" &&
-    (group.type === "rideshare" || group.type === "carpool-request") &&
-    canParticipantActOnGroup(selectedParticipant, group);
+    (group.type === "rideshare" || group.type === "carpool-request");
   const hostCanMarkInquiries =
     isHost &&
     canManageStatus &&
@@ -3278,7 +3265,12 @@ function RideCard({
   const footerMatchParticipantId = footerHostMatch?.id;
   const hasActivity = riders.length > 0 || inquiries.length > 0;
   const hasDetails = Boolean(host?.notes || hasActivity);
-  let contactStatusText = "Not a fit";
+  const hasRideModeMismatch = Boolean(selectedParticipant && !isHost && !canActOnGroup);
+  const hasSlotMismatch = Boolean(
+    selectedParticipant && !isHost && groupOpenSlotIds.length > 0 && sharedSlotIds.length === 0,
+  );
+  const showFitWarning = hasRideModeMismatch || hasSlotMismatch;
+  let contactStatusText = "Unavailable";
   if (!selectedParticipant) {
     contactStatusText = "Add ride info first";
   } else if (pendingSlotIds.length && showsMatchedState) {
@@ -3299,9 +3291,11 @@ function RideCard({
     contactStatusText = "Already matched";
   } else if (status === "full") {
     contactStatusText = "Full";
+  } else if (!groupOpenSlotIds.length) {
+    contactStatusText = "No open slots";
   }
 
-  let actionGuidance = "This does not match your current ride plan.";
+  let actionGuidance = "No action available for this post.";
   if (!selectedParticipant) {
     actionGuidance = "Post your ride info to compare routes and contact matches.";
   } else if (pendingSlotIds.length && showsMatchedState) {
@@ -3342,6 +3336,8 @@ function RideCard({
     actionGuidance = "This is your post.";
   } else if (status === "full") {
     actionGuidance = "This post is full.";
+  } else if (!groupOpenSlotIds.length) {
+    actionGuidance = "No open conference slots are available.";
   }
 
   return (
@@ -3499,6 +3495,16 @@ function RideCard({
             )}
           </div>
         </details>
+      )}
+
+      {showFitWarning && (
+        <div className="fit-warning" role="note">
+          <CircleAlert size={16} aria-hidden="true" />
+          <div>
+            <strong>Not a fit</strong>
+            <span>This does not match your current ride plan, but you can still save or contact them.</span>
+          </div>
+        </div>
       )}
 
       <div className={`card-actions${canManageStatus ? "" : " no-status-control"}`}>
