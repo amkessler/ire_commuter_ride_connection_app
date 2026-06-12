@@ -23,7 +23,7 @@ import {
   adminRemoveParticipantPost,
   adminUpdateGroupStatus,
   commitToRide,
-  deleteParticipant,
+  deleteHostedRidePosts,
   fetchSupabaseBoard,
   requestJoinRide,
   saveRideForLater,
@@ -1716,6 +1716,7 @@ function App() {
 
   const activeStats = useMemo(() => {
     const openGroups = groups.filter((group) => effectiveStatus(group) !== "full");
+    const activeHostIds = new Set(groups.map((group) => group.hostId));
     const openSeats = groups.reduce((total, group) => {
       if (group.type === "carpool-request") return total;
       return total + getGroupCounts(group).openSpots;
@@ -1727,7 +1728,7 @@ function App() {
         participant.intent === "both",
     );
     return {
-      participants: participants.length,
+      participants: activeHostIds.size,
       openGroups: openGroups.length,
       openSeats,
       seekers: seekers.length,
@@ -1754,8 +1755,16 @@ function App() {
   const canSwitchParticipant = !session || hasAdminAccess;
   const canUseSelectedParticipantForRideActions =
     !session || !hasAdminAccess || Boolean(ownParticipant && selectedParticipant?.id === ownParticipant.id);
+  const ownHostedGroups = useMemo(
+    () => (ownParticipant ? groups.filter((group) => group.hostId === ownParticipant.id) : []),
+    [groups, ownParticipant],
+  );
+  const hasOwnHostedRidePost = ownHostedGroups.length > 0;
   const planSummaryParticipant = ownParticipant || (!session ? selectedParticipant : null);
-  const showPlanEditor = isPlanEditorOpen || !planSummaryParticipant;
+  const showPlanEditor =
+    isPlanEditorOpen ||
+    !planSummaryParticipant ||
+    Boolean(session && ownParticipant && !hasOwnHostedRidePost);
 
   function openPlanEditor() {
     setRideInfoMessage("");
@@ -1770,7 +1779,7 @@ function App() {
   async function removeRidePost() {
     if (!session || !supabase || !ownParticipant) return;
     const confirmed = window.confirm(
-      "Remove your ride post? This will take your profile and hosted ride posts off the board.",
+      "Remove your ride post? Your name and contact details will stay saved so your next post is prefilled.",
     );
     if (!confirmed) return;
 
@@ -1778,11 +1787,11 @@ function App() {
     setAppError("");
     setRideInfoMessage("");
     try {
-      await deleteParticipant(ownParticipant.id);
-      setForm(blankForm);
-      setSelectedParticipantId("");
+      await deleteHostedRidePosts(ownParticipant.id);
+      setForm(participantToForm(ownParticipant));
+      setSelectedParticipantId(ownParticipant.id);
       await loadRemoteBoard(session);
-      setRideInfoMessage("Your ride post was removed.");
+      setRideInfoMessage("Your ride post was removed. Your profile details are still saved.");
       setIsPlanEditorOpen(true);
     } catch (error) {
       setAppError(error.message || "Unable to remove your ride post.");
@@ -1931,7 +1940,7 @@ function App() {
                 <p className="eyebrow">Your plan</p>
                 <h2>
                   {showPlanEditor
-                    ? ownParticipant
+                    ? hasOwnHostedRidePost
                       ? "Update your ride info"
                       : "Add your ride info"
                     : session
@@ -1948,7 +1957,7 @@ function App() {
                 onAvailabilityChange={updateAvailability}
                 isSaving={isSyncing}
                 saveMessage={rideInfoMessage}
-                submitLabel={ownParticipant ? "Save ride info" : "Post ride info"}
+                submitLabel={hasOwnHostedRidePost ? "Save ride info" : "Post ride info"}
               />
             ) : (
               <PlanSummary

@@ -233,6 +233,12 @@ export async function deleteParticipant(participantId) {
   if (error) throw error;
 }
 
+export async function deleteHostedRidePosts(participantId) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { error } = await supabase.from("ride_groups").delete().eq("host_participant_id", participantId);
+  if (error) throw error;
+}
+
 export async function adminRemoveParticipantPost(participantId, reason) {
   if (!supabase) throw new Error("Supabase is not configured.");
   const { error } = await supabase.rpc("admin_remove_participant_post", {
