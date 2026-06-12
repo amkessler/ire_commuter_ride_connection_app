@@ -697,6 +697,16 @@ function getSharedOpenSlotIds(group, participant) {
     .filter((slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0);
 }
 
+function getSavableSlotIds(group, participant, host, groups) {
+  if (!participant || !host) return [];
+  const sharedOpenSlotIds = getSharedOpenSlotIds(group, participant);
+  const directMatchedSlotIds = getMatchedSlotIds(group, participant.id);
+  const pairMatchedSlotIds = getParticipantPairMatchedSlotIds(participant.id, host.id, groups);
+  const pendingSlotIds = getInquirySlotIds(group, participant.id);
+  const unavailableSlotIds = new Set([...directMatchedSlotIds, ...pairMatchedSlotIds, ...pendingSlotIds]);
+  return sharedOpenSlotIds.filter((slotId) => !unavailableSlotIds.has(slotId));
+}
+
 function getParticipantPairMatchedSlotIds(firstParticipantId, secondParticipantId, groups) {
   const matchedSlotIds = new Set();
 
@@ -896,11 +906,8 @@ function buildRideActivity(participant, groups, participants) {
     }
 
     if (host && group.savedByParticipant?.includes(participant.id)) {
-      const pendingSlotIds = getInquirySlotIds(group, participant.id);
-      const directMatchedSlotIds = getMatchedSlotIds(group, participant.id);
-      const pairMatchedSlotIds = getParticipantPairMatchedSlotIds(participant.id, host.id, groups);
-      const hiddenSlotIds = new Set([...pendingSlotIds, ...directMatchedSlotIds, ...pairMatchedSlotIds]);
-      const savedSlotIds = getSavedSlotIds(group, participant.id).filter((slotId) => !hiddenSlotIds.has(slotId));
+      const savableSlotIds = getSavableSlotIds(group, participant, host, groups);
+      const savedSlotIds = getSavedSlotIds(group, participant.id).filter((slotId) => savableSlotIds.includes(slotId));
 
       if (savedSlotIds.length) {
         saved.push({
@@ -1390,13 +1397,7 @@ function App() {
     const host = participants.find((participant) => participant.id === group?.hostId);
     if (!group || !host) return;
     const sharedOpenSlotIds = getSharedOpenSlotIds(group, selectedParticipant);
-    const directMatchedSlotIds = getMatchedSlotIds(group, selectedParticipant.id);
-    const pairMatchedSlotIds = getParticipantPairMatchedSlotIds(selectedParticipant.id, host.id, groups);
-    const pendingSlotIds = getInquirySlotIds(group, selectedParticipant.id);
-    const unavailableSlotIds = new Set([...directMatchedSlotIds, ...pairMatchedSlotIds, ...pendingSlotIds]);
-    const eligibleSlotIds = sharedOpenSlotIds.filter(
-      (slotId) => !unavailableSlotIds.has(slotId),
-    );
+    const eligibleSlotIds = getSavableSlotIds(group, selectedParticipant, host, groups);
     const currentSavedSlotIds = getSavedSlotIds(group, selectedParticipant.id).filter((slotId) =>
       eligibleSlotIds.includes(slotId),
     );
@@ -1538,16 +1539,19 @@ function App() {
       setAppError("");
       try {
         await requestJoinRide(groupId, selectedParticipant.id, slotIds);
-        const remainingSavedSlotIds = getSavedSlotIds(group, selectedParticipant.id).filter(
-          (slotId) => !slotIds.includes(slotId),
-        );
-        if (remainingSavedSlotIds.length !== getSavedSlotIds(group, selectedParticipant.id).length) {
-          await saveRideForLater(groupId, selectedParticipant.id, remainingSavedSlotIds);
-        }
         try {
           await sendRideNotification(groupId, selectedParticipant.id);
         } catch (notificationError) {
           console.warn("Ride notification was not sent.", notificationError);
+        }
+        const savedSlotIds = getSavedSlotIds(group, selectedParticipant.id);
+        const remainingSavedSlotIds = savedSlotIds.filter((slotId) => !slotIds.includes(slotId));
+        if (remainingSavedSlotIds.length !== savedSlotIds.length) {
+          try {
+            await saveRideForLater(groupId, selectedParticipant.id, remainingSavedSlotIds);
+          } catch (saveCleanupError) {
+            console.warn("Saved ride cleanup was not completed.", saveCleanupError);
+          }
         }
         await loadRemoteBoard(session);
       } catch (error) {
@@ -3201,8 +3205,11 @@ function RideCard({
   const interestEligibleSlotIds = sharedSlotIds.filter(
     (slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0 && !visibleMatchedSlotIds.includes(slotId),
   );
+  const savableSlotIds = selectedParticipant && host
+    ? getSavableSlotIds(group, selectedParticipant, host, allGroups)
+    : [];
   const savedSlotIds = selectedParticipant ? getSavedSlotIds(group, selectedParticipant.id) : [];
-  const visibleSavedSlotIds = savedSlotIds.filter((slotId) => interestEligibleSlotIds.includes(slotId));
+  const visibleSavedSlotIds = savedSlotIds.filter((slotId) => savableSlotIds.includes(slotId));
   const visibleSavedSlotsText = formatSlotIds(visibleSavedSlotIds);
   const visibleSavedSlotsSummary = formatSlotSummary(visibleSavedSlotIds);
   const hasVisibleSavedSlots = visibleSavedSlotIds.length > 0;
@@ -3225,7 +3232,7 @@ function RideCard({
     !isHost &&
     !alreadyInquired &&
     status !== "full" &&
-    interestEligibleSlotIds.length > 0 &&
+    savableSlotIds.length > 0 &&
     canActOnGroup;
   const canUpdateInterest =
     selectedParticipant &&
