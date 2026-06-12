@@ -128,7 +128,7 @@ Contact and match state is now slot-specific. A notification means someone recor
 After SMTP, secrets, and the Edge Function are configured:
 
 1. Sign in as User A and create a post with multiple slots, such as `Thu AM`, `Thu PM`, and `Fri AM`.
-2. Sign in as User B and create a compatible profile.
+2. Sign in as User B and create a profile that can see User A's post. This can be a strong fit or a non-fit with open slots.
 3. User B reveals User A's contact details and records interest only in selected slots, such as `Thu AM` and `Thu PM`.
 4. Confirm User A receives one notification email.
 5. Confirm the app still shows only the selected pending slots.

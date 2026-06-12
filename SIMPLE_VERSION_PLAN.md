@@ -32,6 +32,8 @@ The primary interface stays focused on the ride profile, likely matches, filters
 - Put notes and contact/match history behind a `Details and history` disclosure so the board stays easy to scan. Notes are visible to signed-in users, so helper copy warns users not to enter private details.
 - Show a compact route-fit legend so labels like `Same corridor`, `Nearby route`, and `Likely detour` have context.
 - Show match categories instead of exact numeric fit scores.
+- Treat fit as guidance, not a blocker. Cards that do not match the current plan should show a `Not a fit` warning while still allowing save/contact actions for open slots.
+- Let users save posts privately by selected open slots before they decide whether to make contact.
 - Keep status controls on cards so hosts/admins can still mark posts as open, pending, matched, or full. The database still stores the final match status as `committed`.
 - Require a contact marker before anyone can mark a match, so attendees contact each other first by email or phone and only record a match after mutual agreement.
 - Treat contact markers and final matches as slot-specific. A user can express interest in `Thu AM` and `Thu PM`, then match only `Thu AM` while leaving `Thu PM` pending.
@@ -44,7 +46,7 @@ The primary interface stays focused on the ride profile, likely matches, filters
 
 - Treat `Reveal email` and `Reveal phone` as the primary contact actions on every card.
 - Use secondary buttons only for record keeping: `Record contact`, `Record help offer`, and `Mark matched`.
-- Use a slot picker before recording contact/help or marking a match when there is more than one eligible shared slot.
+- Use a slot picker before saving, recording contact/help, or marking a match when there is more than one eligible open slot.
 - Require at least one contact method to be revealed before showing `Record contact` or `Record help offer`.
 - Avoid request-sending labels that imply a confirmed ride or in-app inbox. The notification only tells the post owner someone marked a possible fit and should sign in to review details.
 - Do not use disabled buttons for instructions such as `Contact first`; show that guidance as plain helper text instead.

@@ -31,6 +31,8 @@ Second, it displays active ride options. These are shown as ride cards. A card m
 
 Third, it helps users judge fit. The app scores potential matches internally based on timing, route corridor, ride type, status, and capacity, then shows plain categories such as `Strong match` or `Possible match`. A good match appears higher. A bad match, such as a driver having to make a major detour, gets pushed lower.
 
+Fit is guidance, not a hard wall. If a post does not match someone's current plan, the card shows a `Not a fit` warning but still lets them save the post, reveal contact details, and record contact or a help offer when the post has open trip slots. That matters because real people may agree to flexible arrangements the scoring model cannot predict, such as meeting at a halfway point.
+
 Fourth, it supports a more careful coordination flow. A user can reveal email or phone details, contact the other person outside the app, and then record that contact or help offer. They cannot simply force themselves into someone else's ride. A final match should happen only after the people involved contact each other and agree.
 
 The app now has two operating modes.
@@ -336,6 +338,7 @@ That is how shared time slots are found.
 The same slot IDs are now stored on contact and match records:
 
 - `ride_inquiries.interest_slots` stores the pending slots someone contacted another user about.
+- `ride_saves.saved_slots` stores the slots someone privately saved for later review.
 - `ride_memberships.matched_slots` stores the slots that were actually confirmed as matched.
 
 That lets the app show split states such as:
@@ -586,12 +589,13 @@ Good security often works this way: show the right locked door, but do not hand 
 The app uses a few Supabase RPC functions:
 
 - `get_my_role`
+- `save_ride_for_later`
 - `request_join_ride`
 - `commit_to_ride`
 
-Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can record contact/help or record an agreed match.
+Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can privately save posts, record contact/help, or record an agreed match.
 
-Both ride-action RPCs check the submitted participant, ride group, and selected slot IDs before changing data. They reject self-matches, already-matched slots, full slots, incompatible ride types, and users who do not own the submitted participant unless the session has MFA-verified admin access.
+The ride-action RPCs check the submitted participant, ride group, and selected slot IDs before changing data. Fit is intentionally not a hard database requirement anymore: users may save or contact non-fit posts when there are open slots. The RPCs still reject own-post actions, already-matched slots, full slots, missing pending contact before a match, and users who do not own the submitted participant unless the session has MFA-verified admin access.
 
 The `commit_to_ride` name is now a little historical. In the simple interface, the user-facing action is "mark matched." The RPC keeps the older name, but it now requires a prior contact marker and checks who is allowed to mark the match:
 
@@ -599,7 +603,7 @@ The `commit_to_ride` name is now a little historical. In the simple interface, t
 - For carpool requests, a helper must mark that they offered help first.
 - For Uber/Lyft splits, either the organizer or the contacted participant can mark the match after the contact marker exists.
 
-The selected slots are important. `request_join_ride` records pending interest for the chosen slots. `commit_to_ride` records only the selected agreed slots and leaves any other pending slots pending.
+The selected slots are important. `save_ride_for_later` records private saved slots, `request_join_ride` records pending interest for the chosen slots, and `commit_to_ride` records only the selected agreed slots and leaves any other pending slots pending.
 
 The important engineering rule is not "never use security-definer functions." The rule is "make them small, explicit, and carefully permission-checked."
 
@@ -1152,6 +1156,7 @@ The fix was to make contact interest and final matching slot-specific:
 
 - `ride_inquiries.interest_slots` stores which slots the contact/help marker applies to.
 - `ride_memberships.matched_slots` stores which slots were actually confirmed.
+- `ride_saves.saved_slots` stores which slots someone privately saved.
 - Recording contact opens a slot picker.
 - Marking a match opens a slot picker and only moves selected pending slots into matched state.
 - Unselected pending slots stay pending.

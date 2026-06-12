@@ -10,12 +10,14 @@ The app has three primary areas:
 - `Likely matches`: a compact list of relevant carpool offers, carpool requests, and Uber/Lyft split groups.
 - `Your ride activity`: a signed-in summary of pending contacts, people the user contacted, and confirmed matches.
 
-Users can open the `How to use this app` modal for a short guide without cluttering the main board. Signed-out users see clearly labeled sample data and can return to sample mode if they start sign-in and change their mind. Signed-in users can reveal email or phone details when they want to reach someone, mark that contact or a help offer happened for specific conference trip slots, and then mark only the mutually agreed slots as matched. Sign-in, saved ride-plan details, prototype preview tools, and card history stay collapsed until needed. The UI deliberately avoids letting someone instantly commit to another attendee's ride without prior contact.
+Users can open the `How to use this app` modal for a short guide without cluttering the main board. Signed-out users see clearly labeled sample data and can return to sample mode if they start sign-in and change their mind. Signed-in users can save posts privately, reveal email or phone details when they want to reach someone, mark that contact or a help offer happened for specific conference trip slots, and then mark only the mutually agreed slots as matched. Sign-in, saved ride-plan details, prototype preview tools, and card history stay collapsed until needed. The UI deliberately avoids letting someone instantly commit to another attendee's ride without prior contact.
 
 The workflow rules are:
 
 - Contact interest is per slot. A user can record interest in `Thu AM` and `Thu PM` without recording interest in `Fri AM`.
+- Saved rides are per slot. A user can privately save the open slots they may want to revisit without alerting the post owner.
 - Final matching is also per slot. A driver or organizer can mark only `Thu AM` as matched and leave `Thu PM` pending.
+- Route, mode, and schedule fit are advisory. Non-fit cards show a `Not a fit` warning but still expose the normal save/contact flow when the post has open slots.
 - Carpool drivers can mark final matches for their own carpool offers.
 - For carpool requests, a potential helper must mark that they offered help before the request can be marked matched.
 - For Uber/Lyft split groups, either the organizer or the contacted participant can mark the group matched after contact is recorded.
@@ -46,20 +48,24 @@ The workflow rules are:
 - `availability`
 - `inquiries`: participant IDs that have marked contact or offered help. This is an internal database name; the current UI presents it as contact tracking.
 - `inquirySlotsByParticipant`: app-shaped map of participant ID to pending contact slots, sourced from `ride_inquiries.interest_slots`.
+- `savedByParticipant`: participant IDs that privately saved the post.
+- `savedSlotsByParticipant`: app-shaped map of participant ID to saved slots, sourced from `ride_saves.saved_slots`.
 - `matchedSlotsByParticipant`: app-shaped map of participant ID to confirmed slots, sourced from `ride_memberships.matched_slots`.
 
 In Supabase:
 
 - `ride_inquiries.interest_slots` stores the selected pending contact/help slots.
+- `ride_saves.saved_slots` stores the selected private saved-post slots.
 - `ride_memberships.matched_slots` stores the selected confirmed match slots.
-- `request_join_ride(p_group_id, p_participant_id, p_slot_ids)` validates and records pending slots.
+- `save_ride_for_later(p_group_id, p_participant_id, p_slot_ids)` validates and records private saved slots.
+- `request_join_ride(p_group_id, p_participant_id, p_slot_ids)` validates and records pending contact/help slots.
 - `commit_to_ride(p_group_id, p_participant_id, p_slot_ids)` validates that the slots were previously pending, records only those matched slots, and leaves unselected pending slots in place.
 
 Capacity is evaluated by slot. A carpool with one open seat can be full for `Thu AM` but still open for `Fri AM`.
 
 ## Matching Logic
 
-The app scores possible pairings internally, then shows users plain categories such as `Strong match`, `Good match`, `Possible match`, or `Weak match`. The internal score uses:
+The app scores pairings internally, then shows users plain categories such as `Strong match`, `Good match`, `Possible match`, or `Weak match`. These labels affect ordering and warnings, not whether a user is allowed to save or contact a post. The internal score uses:
 
 1. Shared trip slots.
 2. Regional corridor match.
@@ -67,6 +73,8 @@ The app scores possible pairings internally, then shows users plain categories s
 4. Mode fit: carpool seekers match driver offers; drivers can respond to carpool requests; rideshare split seekers match rideshare pools.
 5. Route flexibility: driver carpools penalize off-route requests more than Uber/Lyft split groups.
 6. Capacity and status: full or matched rides can remain visible but are ranked below open options.
+
+If a card is outside the viewer's current route, mode, or trip-slot plan, it shows a `Not a fit` warning while leaving the normal save/contact controls available for open slots. This keeps the workflow flexible for real-world cases such as a rider meeting a driver at a halfway point.
 
 The route model is intentionally approximate. A production version should geocode submitted neighborhoods and evaluate actual pickup detour time with a maps API.
 
@@ -120,7 +128,7 @@ Security checks:
 supabase db advisors --linked --type security --level info
 ```
 
-The app intentionally exposes authenticated RPCs for narrow server-side actions: `get_my_role`, `request_join_ride`, `commit_to_ride`, and admin moderation helpers. `request_join_ride` records that contact/help was initiated for selected slots, while `commit_to_ride` requires that prior contact marker and enforces the contact-first match rules for the selected slots. Both ride-action RPCs validate participant/group compatibility, ownership or admin permission, slot-level capacity, self-matches, and already-matched slots before changing data. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
+The app intentionally exposes authenticated RPCs for narrow server-side actions: `get_my_role`, `save_ride_for_later`, `request_join_ride`, `commit_to_ride`, and admin moderation helpers. `save_ride_for_later` records private saved slots, `request_join_ride` records that contact/help was initiated for selected slots, and `commit_to_ride` requires that prior contact marker and enforces the contact-first match rules for the selected slots. Ride fit is not a database hard gate; the current RPCs permit flexible non-fit actions for open slots. They still validate ownership or admin permission, slot-level capacity, self-actions, already-matched slots, and pending-slot requirements before changing data. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
 
 The app also includes a `send-ride-notification` Supabase Edge Function. After `request_join_ride` succeeds, the frontend calls this function on a best-effort basis. The function verifies the signed-in requester, confirms the inquiry exists, creates one `ride_notification_events` row per requester/post pair, and sends a minimal Resend email telling the post owner to sign in and review the possible match. Notification failures do not undo the contact marker.
 
@@ -200,3 +208,5 @@ Use this smoke test after changing contact, match, or capacity logic:
 7. Confirm `ride_inquiries.interest_slots` still contains `thuPm`.
 8. Confirm `Fri AM` is not treated as contacted or matched.
 9. Confirm the card can show a split state such as `Matched: Thu AM; pending: Thu PM`.
+10. Confirm a non-fit post with open slots shows a `Not a fit` warning while still offering `Save`, contact reveal buttons, and the normal record-contact/help action after contact is revealed.
+11. Confirm saving a non-fit post writes only the selected open slots to `ride_saves.saved_slots`.
