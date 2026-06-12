@@ -968,11 +968,12 @@ function App() {
     ? participants.find((participant) => participant.userId === session.user.id)
     : null;
   const selectedParticipant =
-    (session && !hasAdminAccess
-      ? ownParticipant
-      : participants.find((participant) => participant.id === selectedParticipantId)) ||
-    ownParticipant ||
-    participants[0];
+    session && !hasAdminAccess
+      ? ownParticipant || null
+      : participants.find((participant) => participant.id === selectedParticipantId) ||
+        ownParticipant ||
+        participants[0] ||
+        null;
 
   useEffect(() => {
     if (session && ownParticipant) {
@@ -1022,8 +1023,8 @@ function App() {
         const currentOwnParticipant = board.participants.find(
           (participant) => participant.userId === activeSession.user.id,
         );
-        if (board.role !== "admin" && currentOwnParticipant) {
-          setSelectedParticipantId(currentOwnParticipant.id);
+        if (board.role !== "admin") {
+          setSelectedParticipantId(currentOwnParticipant?.id || "");
         } else if (board.participants.length) {
           setSelectedParticipantId((currentId) =>
             board.participants.some((participant) => participant.id === currentId)
@@ -3253,7 +3254,7 @@ function RideCard({
     !isHost &&
     !alreadyInquired &&
     status !== "full" &&
-    interestEligibleSlotIds.length > 0 &&
+    savableSlotIds.length > 0 &&
     canActOnGroup;
   const hasContactMethod = Boolean(host?.email || host?.phone);
   const hasRevealedContact = revealedContacts.email || revealedContacts.phone;
@@ -3278,7 +3279,9 @@ function RideCard({
   const hasActivity = riders.length > 0 || inquiries.length > 0;
   const hasDetails = Boolean(host?.notes || hasActivity);
   let contactStatusText = "Not a fit";
-  if (pendingSlotIds.length && showsMatchedState) {
+  if (!selectedParticipant) {
+    contactStatusText = "Add ride info first";
+  } else if (pendingSlotIds.length && showsMatchedState) {
     contactStatusText = `Matched: ${visibleMatchedSlotsSummary}; pending: ${pendingSlotsSummary}`;
   } else if (pendingSlotIds.length) {
     contactStatusText = `${groupMeta.inquiredLabel} for ${pendingSlotsSummary}`;
@@ -3299,7 +3302,9 @@ function RideCard({
   }
 
   let actionGuidance = "This does not match your current ride plan.";
-  if (pendingSlotIds.length && showsMatchedState) {
+  if (!selectedParticipant) {
+    actionGuidance = "Post your ride info to compare routes and contact matches.";
+  } else if (pendingSlotIds.length && showsMatchedState) {
     actionGuidance = `Matched for ${visibleMatchedSlotsText}. Still pending: ${pendingSlotsText}.`;
   } else if (canMarkMatchFromFooter) {
     actionGuidance = "Choose only the slots everyone has agreed to match.";
