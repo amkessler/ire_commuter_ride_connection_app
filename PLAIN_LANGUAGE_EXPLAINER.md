@@ -347,6 +347,8 @@ That lets the app show split states such as:
 Matched: Thu AM; pending: Thu PM
 ```
 
+The database also prunes those slot arrays when a post's availability changes. If a host removes `Thu PM` from a post, old saved, pending, or matched `Thu PM` state is removed so the app cannot later match an inactive trip slot.
+
 ## Corridors: A Practical Substitute For Maps
 
 The app does not use a maps API yet. Instead, it uses a list of corridors with labels, route notes, and adjacency rules.
@@ -454,7 +456,7 @@ Real coordination has gray areas. Someone might have asked about a ride but not 
 
 The app models those gray areas.
 
-The function `effectiveStatus` also protects against bad status data. If a group has no open spots for any active slot, it is treated as full even if its stored status says something else.
+The function `effectiveStatus` also protects against bad status data. If a group has no open spots for any active slot, it is treated as full even if its stored status says something else. Manual `full` status also counts: when a host or admin marks a post full, the app treats it as closed until someone explicitly reopens it.
 
 That is a small but important engineering habit: do not trust one field when another field can prove it wrong.
 
@@ -480,7 +482,7 @@ matched riders for that slot + 1 host
 
 That `+ 1` is easy to miss, but it matters. It prevents the app from acting like the host is not in the vehicle.
 
-The latest version counts capacity by trip slot. A group can be full on `Thu AM` and still have open space on `Fri AM`.
+The latest version counts capacity by trip slot. A group can be full on `Thu AM` and still have open space on `Fri AM`. A manually full post is different: it is closed for all slots until reopened.
 
 ## Storage: Sample Notebook Plus Shared Database
 
@@ -521,7 +523,7 @@ Here is the journey when someone fills out the form.
 8. If the user is signed out, the same data is written into local storage.
 9. If the user is signed in, the participant is upserted to Supabase.
 10. If the participant is hosting a carpool or rideshare group, the hosted group is upserted too.
-11. If the signed-in user removes their post, the app deletes that participant record; hosted ride groups are removed through database cascade rules.
+11. If the signed-in user removes their post, the app deletes their hosted ride groups but keeps their participant row so name, contact details, and ride-profile fields can prefill a future post.
 12. React reloads the board and re-renders the interface.
 
 That is the central React loop:
@@ -547,13 +549,13 @@ The main database tables are:
 
 - `profiles`: basic auth-linked user profile information.
 - `participants`: the full ride profile for a signed-in user, including contact info.
-- `participant_directory`: a lower-exposure directory table that exposes the fields needed for matching.
+- `participant_directory`: the authenticated board directory table that exposes the fields needed for matching and contact reveal.
 - `ride_groups`: carpool and Uber/Lyft split groups.
 - `ride_memberships`: final matched riders, including which trip slots are matched.
 - `ride_inquiries`: the internal contact/help markers for people who have reached out but are not matched yet, including which trip slots are pending.
 - `admin_users`: the list of auth users who are allowed to become admins.
 
-The `participant_directory` table is worth calling out. Earlier, this was modeled as a view. The safer version is a real table with row-level security. A trigger keeps it synchronized with `participants`, but it does not expose private fields like phone numbers to every signed-in user. It does include notes, because those notes help people judge ride fit, so the UI tells users that notes are visible to signed-in users and should not contain private information.
+The `participant_directory` table is worth calling out. Earlier, this was modeled as a view. The safer version is a real table with row-level security. A trigger keeps it synchronized with `participants`. In the current attendee-board version, visible directory rows include contact fields because the app is designed for signed-in attendees to reveal email or phone and coordinate directly outside the app. The reveal buttons are a user-experience step, not a cryptographic privacy boundary. Notes are also visible to signed-in users, so the UI tells users that notes should not contain private information.
 
 Think of it like a conference badge. The badge can show your name and neighborhood for coordination. It does not need to print your whole registration record.
 
@@ -565,7 +567,7 @@ The React UI hides controls that a regular user should not use. But hiding a but
 
 So the real enforcement lives in the database.
 
-Regular users can manage their own participant record. Authenticated users can see the lower-exposure directory and ride groups. Admins can do more, but only after passing MFA.
+Regular users can manage their own participant record. Authenticated users can see visible board directory rows and ride groups. Admins can do more, but only after passing MFA.
 
 That last point matters: the app separates "this account is listed as an admin" from "this session currently has admin power."
 
@@ -595,7 +597,7 @@ The app uses a few Supabase RPC functions:
 
 Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can privately save posts, record contact/help, or record an agreed match.
 
-The ride-action RPCs check the submitted participant, ride group, and selected slot IDs before changing data. Fit is intentionally not a hard database requirement anymore: users may save or contact non-fit posts when there are open slots. The RPCs still reject own-post actions, already-matched slots, full slots, missing pending contact before a match, and users who do not own the submitted participant unless the session has MFA-verified admin access.
+The ride-action RPCs check the submitted participant, ride group, and selected slot IDs before changing data. Fit is intentionally not a hard database requirement anymore: users may save or contact non-fit posts when there are open slots. The RPCs still reject own-post actions, already-matched slots, inactive selected slots, manual full status, full slots, missing pending contact before a match, and users who do not own the submitted participant unless the session has MFA-verified admin access.
 
 The `commit_to_ride` name is now a little historical. In the simple interface, the user-facing action is "mark matched." The RPC keeps the older name, but it now requires a prior contact marker and checks who is allowed to mark the match:
 
@@ -604,6 +606,10 @@ The `commit_to_ride` name is now a little historical. In the simple interface, t
 - For Uber/Lyft splits, either the organizer or the contacted participant can mark the match after the contact marker exists.
 
 The selected slots are important. `save_ride_for_later` records private saved slots, `request_join_ride` records pending interest for the chosen slots, and `commit_to_ride` records only the selected agreed slots and leaves any other pending slots pending.
+
+The current migration also keeps old slot state from becoming dangerous. If availability changes after someone saved, contacted, or matched a slot, the database trims `saved_slots`, `interest_slots`, and `matched_slots` down to the post's still-active slots.
+
+Admin remove-post behavior is deliberately narrower than account deletion. The admin helper removes hosted ride groups from the board but preserves the participant row/profile details. That lets the attendee return later with their contact information still available for prefill.
 
 The important engineering rule is not "never use security-definer functions." The rule is "make them small, explicit, and carefully permission-checked."
 
@@ -1164,6 +1170,21 @@ The fix was to make contact interest and final matching slot-specific:
 
 Lesson: when one record represents several real-world events, the app must store which event the action applies to.
 
+## Issue 14: Availability Changes Can Make Old Slots Stale
+
+After slot-specific saves, contact markers, and matches existed, another edge case appeared. A host could remove a trip slot from their post after someone had saved, contacted, or matched that slot.
+
+The fix was to make availability edits clean up dependent slot state:
+
+- Removed trip slots are pruned from `ride_saves.saved_slots`.
+- Removed trip slots are pruned from `ride_inquiries.interest_slots`.
+- Removed trip slots are pruned from `ride_memberships.matched_slots`.
+- A match cannot be recorded for a pending slot that is no longer active on the post.
+- A manually full post stays closed until reopened, even if computed capacity would otherwise show room.
+- Admin remove-post now removes hosted ride groups while preserving the participant profile row.
+
+Lesson: once users can edit the source schedule, every stored decision tied to that schedule needs a cleanup path.
+
 ## What Good Engineers Did Here
 
 This project shows several habits that matter in real software work.
@@ -1574,8 +1595,8 @@ participants
   updated_at
 
 participant_directory
-  lower-exposure participant fields for matching and display
-  notes visible to signed-in users
+  board-visible participant fields for matching, contact reveal, and display
+  contact details and notes visible on eligible signed-in board rows
 
 ride_groups
   id
@@ -1747,7 +1768,7 @@ Do not skip visual inspection. Front-end bugs often live in the space between "t
 
 `capacity`: The maximum number of carpool seats or rideshare participants.
 
-`effectiveStatus`: The status after accounting for capacity. If a group is full, it is full even if the stored status says otherwise.
+`effectiveStatus`: The status after accounting for capacity and manual closure. If a group has no open active slots, it is full even if the stored status says otherwise. If the stored status is manually `full`, it stays full until reopened.
 
 `localStorage`: Browser-only storage used for signed-out sample mode.
 

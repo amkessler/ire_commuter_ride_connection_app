@@ -34,13 +34,15 @@ The primary interface stays focused on the ride profile, likely matches, filters
 - Show match categories instead of exact numeric fit scores.
 - Treat fit as guidance, not a blocker. Cards that do not match the current plan should show a `Not a fit` warning while still allowing save/contact actions for open slots.
 - Let users save posts privately by selected open slots before they decide whether to make contact.
-- Keep status controls on cards so hosts/admins can still mark posts as open, pending, matched, or full. The database still stores the final match status as `committed`.
+- Keep status controls on cards so hosts/admins can still mark posts as open, pending, matched, or full. The database still stores the final match status as `committed`. Manual `full` is treated as a hard closed state until the post is reopened.
 - Require a contact marker before anyone can mark a match, so attendees contact each other first by email or phone and only record a match after mutual agreement.
 - Treat contact markers and final matches as slot-specific. A user can express interest in `Thu AM` and `Thu PM`, then match only `Thu AM` while leaving `Thu PM` pending.
+- Prune stale saved/contact/match slots when a post's availability changes so removed trip slots cannot be matched later.
 - Let carpool drivers finalize carpool matches. For Uber/Lyft split groups, let either the organizer or the contacted participant mark the match once contact has been recorded.
 - Send one lightweight email notification when someone records contact/help on another person's post, so the post owner knows to sign in and review the possible match. The email should not include phone numbers or full ride details; users still coordinate directly after opening the app.
 - Keep `Matched` out of the ordinary status dropdown for unmatched posts; users should reach that state through `Mark matched`.
 - Hide post status controls from people who do not own the post unless they are admins.
+- Remove-post actions remove hosted ride groups while preserving the participant profile/contact row for future prefill.
 
 ## Contact And Notification Direction
 

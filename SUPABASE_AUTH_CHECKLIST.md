@@ -72,3 +72,18 @@ where user_id in (
 ```
 
 Replace `person@example.com` with the email the user uses to sign in.
+
+## Ride Action Checks
+
+After applying ride-action migrations, confirm the linked project has the current migration:
+
+```bash
+supabase migration list
+```
+
+The current release expects `20260612183000_prune_stale_slots_and_preserve_profiles.sql` to be present on the remote project. That migration keeps the app's public-release behavior aligned with the UI:
+
+1. Availability edits prune stale `ride_inquiries.interest_slots`, `ride_saves.saved_slots`, and `ride_memberships.matched_slots`.
+2. `commit_to_ride` rejects inactive pending slots and requires active pending slots.
+3. Manually setting a post to `full` blocks save/contact/match actions until reopened.
+4. Admin remove-post deletes hosted ride groups but preserves the participant row/profile details.

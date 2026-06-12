@@ -623,12 +623,8 @@ function getGroupCounts(group) {
 
 function effectiveStatus(group) {
   const counts = getGroupCounts(group);
+  if (group.status === "full") return "full";
   if (counts.openSpots === 0) return "full";
-  if (group.status === "full") {
-    if (group.riderIds.length > 0) return "committed";
-    if (group.inquiries.length > 0) return "pending";
-    return "open";
-  }
   return group.status;
 }
 

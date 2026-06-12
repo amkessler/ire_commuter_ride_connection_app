@@ -6,22 +6,26 @@ React/Vite app for coordinating conference rides to National Harbor, Maryland fr
 
 The app has three primary areas:
 
-- `Your plan`: one form where a signed-in attendee creates, edits, or removes their single ride profile.
+- `Your plan`: one form where a signed-in attendee creates, edits, or removes their hosted ride posts while keeping profile/contact details for future edits.
 - `Likely matches`: a compact list of relevant carpool offers, carpool requests, and Uber/Lyft split groups.
 - `Your ride activity`: a signed-in summary of pending contacts, people the user contacted, and confirmed matches.
 
 Users can open the `How to use this app` modal for a short guide without cluttering the main board. Signed-out users see clearly labeled sample data and can return to sample mode if they start sign-in and change their mind. Signed-in users can save posts privately, reveal email or phone details when they want to reach someone, mark that contact or a help offer happened for specific conference trip slots, and then mark only the mutually agreed slots as matched. Sign-in, saved ride-plan details, prototype preview tools, and card history stay collapsed until needed. The UI deliberately avoids letting someone instantly commit to another attendee's ride without prior contact.
+
+Contact reveal is a user-experience step, not a database privacy boundary. In the current attendee-board version, visible authenticated `participant_directory` rows include email/phone fields so signed-in attendees can coordinate directly outside the app.
 
 The workflow rules are:
 
 - Contact interest is per slot. A user can record interest in `Thu AM` and `Thu PM` without recording interest in `Fri AM`.
 - Saved rides are per slot. A user can privately save the open slots they may want to revisit without alerting the post owner.
 - Final matching is also per slot. A driver or organizer can mark only `Thu AM` as matched and leave `Thu PM` pending.
+- When a post's availability changes, stale saved, pending, and matched slots that no longer belong to the post are pruned in the database.
 - Route, mode, and schedule fit are advisory. Non-fit cards show a `Not a fit` warning but still expose the normal save/contact flow when the post has open slots.
 - Carpool drivers can mark final matches for their own carpool offers.
 - For carpool requests, a potential helper must mark that they offered help before the request can be marked matched.
 - For Uber/Lyft split groups, either the organizer or the contacted participant can mark the group matched after contact is recorded.
 - The database still stores `committed` as the final status value, but the current UI presents that state as `matched`.
+- Manually setting a post to `full` closes it even if slot-level capacity would otherwise have open spots. It must be reopened before save/contact/match actions can proceed.
 
 ## Core Data Model
 
@@ -61,7 +65,7 @@ In Supabase:
 - `request_join_ride(p_group_id, p_participant_id, p_slot_ids)` validates and records pending contact/help slots.
 - `commit_to_ride(p_group_id, p_participant_id, p_slot_ids)` validates that the slots were previously pending, records only those matched slots, and leaves unselected pending slots in place.
 
-Capacity is evaluated by slot. A carpool with one open seat can be full for `Thu AM` but still open for `Fri AM`.
+Capacity is evaluated by slot. A carpool with one open seat can be full for `Thu AM` but still open for `Fri AM`. Manual `full` status overrides computed capacity and closes the post until changed back to an active status.
 
 ## Matching Logic
 
@@ -128,7 +132,9 @@ Security checks:
 supabase db advisors --linked --type security --level info
 ```
 
-The app intentionally exposes authenticated RPCs for narrow server-side actions: `get_my_role`, `save_ride_for_later`, `request_join_ride`, `commit_to_ride`, and admin moderation helpers. `save_ride_for_later` records private saved slots, `request_join_ride` records that contact/help was initiated for selected slots, and `commit_to_ride` requires that prior contact marker and enforces the contact-first match rules for the selected slots. Ride fit is not a database hard gate; the current RPCs permit flexible non-fit actions for open slots. They still validate ownership or admin permission, slot-level capacity, self-actions, already-matched slots, and pending-slot requirements before changing data. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
+The app intentionally exposes authenticated RPCs for narrow server-side actions: `get_my_role`, `save_ride_for_later`, `request_join_ride`, `commit_to_ride`, and admin moderation helpers. `save_ride_for_later` records private saved slots, `request_join_ride` records that contact/help was initiated for selected slots, and `commit_to_ride` requires that prior contact marker and enforces the contact-first match rules for the selected slots. Ride fit is not a database hard gate; the current RPCs permit flexible non-fit actions for open slots. They still validate ownership or admin permission, manual full status, active selected slots, slot-level capacity, self-actions, already-matched slots, and pending-slot requirements before changing data. Supabase's advisor will warn that these are security-definer functions callable by signed-in users; keep that warning in context and inspect the function bodies before changing grants.
+
+Current slot-state protection is in `20260612183000_prune_stale_slots_and_preserve_profiles.sql`. That migration prunes stale `ride_inquiries.interest_slots`, `ride_saves.saved_slots`, and `ride_memberships.matched_slots` after ride-group availability changes, rejects matching inactive pending slots, and preserves manual `full` as a hard closed state.
 
 The app also includes a `send-ride-notification` Supabase Edge Function. After `request_join_ride` succeeds, the frontend calls this function on a best-effort basis. The function verifies the signed-in requester, confirms the inquiry exists, creates one `ride_notification_events` row per requester/post pair, and sends a minimal Resend email telling the post owner to sign in and review the possible match. Notification failures do not undo the contact marker.
 
@@ -194,6 +200,7 @@ Ride group duplicate prevention:
 
 - Each participant can host at most one carpool offer group, one carpool request group, and one rideshare group.
 - Updating a profile upserts the relevant hosted groups instead of inserting duplicate groups.
+- Removing a user's own post or using the admin remove-post helper deletes hosted ride groups, not the participant profile row. The profile/contact details remain available to prefill a future post.
 
 ## Per-Slot Workflow Test
 
@@ -210,3 +217,6 @@ Use this smoke test after changing contact, match, or capacity logic:
 9. Confirm the card can show a split state such as `Matched: Thu AM; pending: Thu PM`.
 10. Confirm a non-fit post with open slots shows a `Not a fit` warning while still offering `Save`, contact reveal buttons, and the normal record-contact/help action after contact is revealed.
 11. Confirm saving a non-fit post writes only the selected open slots to `ride_saves.saved_slots`.
+12. Edit a post to remove one previously saved/contacted/matched slot and confirm Supabase prunes that stale slot from saves, inquiries, and memberships.
+13. Mark a post `Full` manually and confirm save/contact/match actions are blocked until the post is reopened.
+14. As an MFA-verified admin, remove a post and confirm the hosted ride groups disappear while the participant row remains.
