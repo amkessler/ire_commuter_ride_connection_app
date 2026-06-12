@@ -1852,9 +1852,14 @@ function App() {
     setHighlightedGroupId(groupId);
 
     window.setTimeout(() => {
-      document.getElementById(getRideCardElementId(groupId))?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
+      window.requestAnimationFrame(() => {
+        const card = document.getElementById(getRideCardElementId(groupId));
+        if (!card) return;
+        card.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+        card.focus({ preventScroll: true });
       });
     }, 80);
 
@@ -3338,6 +3343,7 @@ function RideCard({
     <article
       id={getRideCardElementId(group.id)}
       className={`ride-card status-${status}${isHighlighted ? " is-highlighted" : ""}`}
+      tabIndex={-1}
     >
       <div className="ride-card-header">
         <div className="ride-type">
@@ -3536,6 +3542,11 @@ function RideCard({
             )}
             <option value="full">Full</option>
           </select>
+        )}
+        {canRecordContact && (
+          <p className="action-note action-note-full">
+            Record contact after you email or call. This alerts the post owner.
+          </p>
         )}
       </div>
     </article>

@@ -1855,21 +1855,28 @@ button:focus-visible {
   gap: 10px;
   border-top-width: 4px;
   box-shadow: none;
+  scroll-margin-top: 24px;
 }
 
 .simple-app .ride-card.is-highlighted {
-  animation: ride-card-highlight 1.9s ease;
+  animation: ride-card-highlight 2.2s ease;
+  outline: 4px solid #2f6f9f;
+  outline-offset: 4px;
 }
 
 @keyframes ride-card-highlight {
   0%,
   100% {
+    background: #fff;
     box-shadow: none;
+    outline-color: rgb(47 111 159 / 0.2);
   }
 
   18%,
   72% {
-    box-shadow: 0 0 0 4px rgb(47 111 159 / 0.22);
+    background: #f3f8fc;
+    box-shadow: 0 0 0 8px rgb(47 111 159 / 0.14);
+    outline-color: #2f6f9f;
   }
 }
 
@@ -1991,6 +1998,10 @@ button:focus-visible {
   font-weight: 800;
   line-height: 1.35;
   text-align: left;
+}
+
+.action-note-full {
+  grid-column: 1 / -1;
 }
 
 .modal-backdrop {
