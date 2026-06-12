@@ -3304,8 +3304,8 @@ function RideCard({
   const footerHostMatch = hostCanMarkInquiries && unmatchedInquiries.length === 1 ? unmatchedInquiries[0] : null;
   const canMarkMatchFromFooter = canSelfMarkMatch || Boolean(footerHostMatch);
   const footerMatchParticipantId = footerHostMatch?.id;
+  const hasNotes = Boolean(host?.notes);
   const hasActivity = riders.length > 0 || inquiries.length > 0;
-  const hasDetails = Boolean(host?.notes || hasActivity);
   const hasRideModeMismatch = Boolean(selectedParticipant && !isHost && !canActOnGroup);
   const hasSlotMismatch = Boolean(
     selectedParticipant && !isHost && groupOpenSlotIds.length > 0 && sharedSlotIds.length === 0,
@@ -3456,6 +3456,12 @@ function RideCard({
         </div>
       </div>
 
+      {hasNotes && (
+        <p className="ride-card-note">
+          <strong>Notes:</strong> {host.notes}
+        </p>
+      )}
+
       {isAdmin && host && (
         <div className="admin-card-meta">
           <div>
@@ -3486,58 +3492,55 @@ function RideCard({
         </div>
       )}
 
-      {hasDetails && (
+      {hasActivity && (
         <details className="ride-details">
           <summary>Details and history</summary>
           <div className="ride-details-body">
-            {host?.notes && <p>{host.notes}</p>}
-            {hasActivity && (
-              <div className="simple-activity">
-                {riders.length > 0 && (
-                  <div className="inquiry-list">
-                    <strong>{groupMeta.committedLabel}</strong>
-                    {riders.map((rider) => (
+            <div className="simple-activity">
+              {riders.length > 0 && (
+                <div className="inquiry-list">
+                  <strong>{groupMeta.committedLabel}</strong>
+                  {riders.map((rider) => (
+                    <span className="inquiry-item" key={rider.id}>
+                      {rider.name}
+                      <span className="activity-tag matched">
+                        {formatSlotIds(getMatchedSlotIds(group, rider.id))}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {inquiries.length > 0 && (
+                <div className="inquiry-list">
+                  <strong>{groupMeta.inquiriesLabel}</strong>
+                  {inquiries.map((rider) => {
+                    const riderPendingSlotIds = getInquirySlotIds(group, rider.id);
+                    return (
                       <span className="inquiry-item" key={rider.id}>
                         {rider.name}
-                        <span className="activity-tag matched">
-                          {formatSlotIds(getMatchedSlotIds(group, rider.id))}
-                        </span>
+                        {riderPendingSlotIds.length > 0 && (
+                          <span className="activity-tag pending">
+                            Pending for {formatSlotIds(riderPendingSlotIds)}
+                          </span>
+                        )}
+                        {inquiryMatchedSlotsByParticipant[rider.id]?.length > 0 && (
+                          <span className="activity-tag matched">
+                            Matched for {formatSlotIds(inquiryMatchedSlotsByParticipant[rider.id])}
+                          </span>
+                        )}
+                        {hostCanMarkInquiries &&
+                          !footerHostMatch &&
+                          riderPendingSlotIds.some((slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0) && (
+                          <button className="text-button" type="button" onClick={() => onCommit(group.id, rider.id)}>
+                            Mark matched
+                          </button>
+                        )}
                       </span>
-                    ))}
-                  </div>
-                )}
-                {inquiries.length > 0 && (
-                  <div className="inquiry-list">
-                    <strong>{groupMeta.inquiriesLabel}</strong>
-                    {inquiries.map((rider) => {
-                      const riderPendingSlotIds = getInquirySlotIds(group, rider.id);
-                      return (
-                        <span className="inquiry-item" key={rider.id}>
-                          {rider.name}
-                          {riderPendingSlotIds.length > 0 && (
-                            <span className="activity-tag pending">
-                              Pending for {formatSlotIds(riderPendingSlotIds)}
-                            </span>
-                          )}
-                          {inquiryMatchedSlotsByParticipant[rider.id]?.length > 0 && (
-                            <span className="activity-tag matched">
-                              Matched for {formatSlotIds(inquiryMatchedSlotsByParticipant[rider.id])}
-                            </span>
-                          )}
-                          {hostCanMarkInquiries &&
-                            !footerHostMatch &&
-                            riderPendingSlotIds.some((slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0) && (
-                            <button className="text-button" type="button" onClick={() => onCommit(group.id, rider.id)}>
-                              Mark matched
-                            </button>
-                          )}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </details>
       )}

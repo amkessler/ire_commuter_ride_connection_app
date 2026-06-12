@@ -1013,6 +1013,19 @@ button:focus-visible {
   font-weight: 900;
 }
 
+.ride-card-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.ride-card-note strong {
+  color: #2a3846;
+  font-weight: 800;
+}
+
 .ride-details {
   border-top: 1px solid #e5ebe7;
   padding-top: 2px;
