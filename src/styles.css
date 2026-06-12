@@ -1991,19 +1991,21 @@ button:focus-visible {
 .fit-warning {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
+  gap: 8px;
   border: 1px solid #ecd8ad;
   border-radius: 8px;
   background: #fff8e8;
   color: #735315;
-  padding: 10px 12px;
-  font-size: 0.82rem;
+  padding: 8px 10px;
+  font-size: 0.78rem;
   line-height: 1.35;
 }
 
 .fit-warning svg {
   flex: 0 0 auto;
   margin-top: 1px;
+  width: 14px;
+  height: 14px;
 }
 
 .fit-warning div {
@@ -2013,15 +2015,15 @@ button:focus-visible {
 
 .fit-warning strong {
   color: #5f430e;
-  font-size: 0.86rem;
-  font-weight: 900;
+  font-size: 0.78rem;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 
 .fit-warning span {
   color: #735315;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .action-status {
