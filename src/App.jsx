@@ -2045,29 +2045,36 @@ function App() {
 
           <div className="ride-grid simple-ride-grid">
             {filteredGroups.length ? (
-              filteredGroups.map((group) => (
-                <RideCard
-                  key={group.id}
-                  allGroups={groups}
-                  group={group}
-                  participants={participants}
-                  selectedParticipant={selectedParticipant}
-                  match={selectedParticipant ? scoreGroupForParticipant(group, selectedParticipant) : null}
-                  onInquire={openInterestSlotAction}
-                  onSave={openSaveSlotAction}
-                  onCommit={openMatchSlotAction}
-                  onAdminRemovePost={adminRemovePost}
-                  onStatusChange={(status) => updateGroup(group.id, { status })}
-                  isAdmin={hasAdminAccess}
-                  isSyncing={isSyncing}
-                  isHighlighted={highlightedGroupId === group.id}
-                  canUseSelectedParticipantForRideActions={canUseSelectedParticipantForRideActions}
-                  canManageStatus={
-                    hasAdminAccess ||
-                    group.hostId === (session ? ownParticipant?.id : selectedParticipant?.id)
-                  }
-                />
-              ))
+              filteredGroups.map((group) => {
+                const isOwnPost = group.hostId === selectedParticipant?.id;
+                const match = selectedParticipant && !isOwnPost
+                  ? scoreGroupForParticipant(group, selectedParticipant)
+                  : null;
+
+                return (
+                  <RideCard
+                    key={group.id}
+                    allGroups={groups}
+                    group={group}
+                    participants={participants}
+                    selectedParticipant={selectedParticipant}
+                    match={match}
+                    onInquire={openInterestSlotAction}
+                    onSave={openSaveSlotAction}
+                    onCommit={openMatchSlotAction}
+                    onAdminRemovePost={adminRemovePost}
+                    onStatusChange={(status) => updateGroup(group.id, { status })}
+                    isAdmin={hasAdminAccess}
+                    isSyncing={isSyncing}
+                    isHighlighted={highlightedGroupId === group.id}
+                    canUseSelectedParticipantForRideActions={canUseSelectedParticipantForRideActions}
+                    canManageStatus={
+                      hasAdminAccess ||
+                      group.hostId === (session ? ownParticipant?.id : selectedParticipant?.id)
+                    }
+                  />
+                );
+              })
             ) : (
               <p className="empty-note">No matching posts yet. Try clearing search or selecting all corridors.</p>
             )}
