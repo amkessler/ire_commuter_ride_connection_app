@@ -1351,6 +1351,10 @@ function App() {
 
   function openInterestSlotAction(groupId) {
     if (!selectedParticipant) return;
+    if (!canUseSelectedParticipantForRideActions) {
+      setAppError("Admin preview is view-only for ride actions. Switch to your own ride profile before recording contact.");
+      return;
+    }
     const group = groups.find((item) => item.id === groupId);
     const host = participants.find((participant) => participant.id === group?.hostId);
     if (!group || !host) return;
@@ -1391,6 +1395,10 @@ function App() {
 
   function openSaveSlotAction(groupId) {
     if (!selectedParticipant) return;
+    if (!canUseSelectedParticipantForRideActions) {
+      setAppError("Admin preview is view-only for ride actions. Switch to your own ride profile before saving a ride.");
+      return;
+    }
     const group = groups.find((item) => item.id === groupId);
     const host = participants.find((participant) => participant.id === group?.hostId);
     if (!group || !host) return;
@@ -1488,6 +1496,10 @@ function App() {
 
   async function saveRide(groupId, slotIds = []) {
     if (!selectedParticipant) return;
+    if (!canUseSelectedParticipantForRideActions) {
+      setAppError("Admin preview is view-only for ride actions. Switch to your own ride profile before saving a ride.");
+      return;
+    }
     const group = groups.find((item) => item.id === groupId);
     if (!group || group.hostId === selectedParticipant.id) return;
 
@@ -1526,6 +1538,10 @@ function App() {
 
   async function inquire(groupId, slotIds = []) {
     if (!selectedParticipant) return;
+    if (!canUseSelectedParticipantForRideActions) {
+      setAppError("Admin preview is view-only for ride actions. Switch to your own ride profile before recording contact.");
+      return;
+    }
     const group = groups.find((item) => item.id === groupId);
     if (!group || group.hostId === selectedParticipant.id) return;
     if (!slotIds.length) return;
@@ -1587,6 +1603,10 @@ function App() {
 
   async function commit(groupId, participantIdToMatch = selectedParticipant?.id, slotIds = []) {
     if (!selectedParticipant) return;
+    if (!canUseSelectedParticipantForRideActions) {
+      setAppError("Admin preview is view-only for ride actions. Switch to your own ride profile before marking a match.");
+      return;
+    }
     const group = groups.find((item) => item.id === groupId);
     const participantToMatch = participants.find((participant) => participant.id === participantIdToMatch);
     if (!group || !participantToMatch) return;
@@ -1596,7 +1616,6 @@ function App() {
     const isSelfMatch = participantIdToMatch === selectedParticipant.id;
     const hasInquiry = group.inquiries.includes(participantIdToMatch);
     const actorCanMarkMatch =
-      hasAdminAccess ||
       (group.type === "carpool" && isHost) ||
       (group.type === "rideshare" && (isHost || isSelfMatch)) ||
       (group.type === "carpool-request" && isSelfMatch);
@@ -1733,6 +1752,8 @@ function App() {
   );
 
   const canSwitchParticipant = !session || hasAdminAccess;
+  const canUseSelectedParticipantForRideActions =
+    !session || !hasAdminAccess || Boolean(ownParticipant && selectedParticipant?.id === ownParticipant.id);
   const planSummaryParticipant = ownParticipant || (!session ? selectedParticipant : null);
   const showPlanEditor = isPlanEditorOpen || !planSummaryParticipant;
 
@@ -2035,6 +2056,7 @@ function App() {
                   isAdmin={hasAdminAccess}
                   isSyncing={isSyncing}
                   isHighlighted={highlightedGroupId === group.id}
+                  canUseSelectedParticipantForRideActions={canUseSelectedParticipantForRideActions}
                   canManageStatus={
                     hasAdminAccess ||
                     group.hostId === (session ? ownParticipant?.id : selectedParticipant?.id)
@@ -3146,6 +3168,7 @@ function EntryForm({
 function RideCard({
   allGroups = [],
   canManageStatus = true,
+  canUseSelectedParticipantForRideActions = true,
   group,
   isAdmin = false,
   isHighlighted = false,
@@ -3224,14 +3247,17 @@ function RideCard({
     ]),
   );
   const canActOnGroup = selectedParticipant && canParticipantActOnGroup(selectedParticipant, group);
+  const isAdminPreviewRideAction = Boolean(selectedParticipant && !canUseSelectedParticipantForRideActions);
   const canStartInterest =
     selectedParticipant &&
+    canUseSelectedParticipantForRideActions &&
     !isHost &&
     !alreadyInquired &&
     status !== "full" &&
     savableSlotIds.length > 0;
   const canUpdateInterest =
     selectedParticipant &&
+    canUseSelectedParticipantForRideActions &&
     !isHost &&
     alreadyInquired &&
     pendingSlotIds.length > 0 &&
@@ -3240,6 +3266,7 @@ function RideCard({
   const canInquire = canStartInterest;
   const canManageSavedRide =
     selectedParticipant &&
+    canUseSelectedParticipantForRideActions &&
     !isHost &&
     !alreadyInquired &&
     status !== "full" &&
@@ -3249,6 +3276,7 @@ function RideCard({
   const canRecordContact = canInquire && hasRevealedContact;
   const canSelfMarkMatch =
     selectedParticipant &&
+    canUseSelectedParticipantForRideActions &&
     !isHost &&
     alreadyInquired &&
     pendingSlotIds.length > 0 &&
@@ -3256,6 +3284,7 @@ function RideCard({
     (group.type === "rideshare" || group.type === "carpool-request");
   const hostCanMarkInquiries =
     isHost &&
+    canUseSelectedParticipantForRideActions &&
     canManageStatus &&
     status !== "full" &&
     group.type !== "carpool-request" &&
@@ -3273,6 +3302,8 @@ function RideCard({
   let contactStatusText = "Unavailable";
   if (!selectedParticipant) {
     contactStatusText = "Add ride info first";
+  } else if (isAdminPreviewRideAction) {
+    contactStatusText = "Preview only";
   } else if (pendingSlotIds.length && showsMatchedState) {
     contactStatusText = `Matched: ${visibleMatchedSlotsSummary}; pending: ${pendingSlotsSummary}`;
   } else if (pendingSlotIds.length) {
@@ -3298,6 +3329,8 @@ function RideCard({
   let actionGuidance = "No action available for this post.";
   if (!selectedParticipant) {
     actionGuidance = "Post your ride info to compare routes and contact matches.";
+  } else if (isAdminPreviewRideAction) {
+    actionGuidance = "Admin preview is view-only for ride actions.";
   } else if (pendingSlotIds.length && showsMatchedState) {
     actionGuidance = `Matched for ${visibleMatchedSlotsText}. Still pending: ${pendingSlotsText}.`;
   } else if (canMarkMatchFromFooter) {
