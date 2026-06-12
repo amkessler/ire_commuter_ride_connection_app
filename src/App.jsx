@@ -2394,7 +2394,7 @@ function AuthPanel({
       {isExpanded && (
         <>
           {!authCodeSent ? (
-            <form className="auth-form" onSubmit={onSendCode}>
+            <form className="auth-form auth-email-form" onSubmit={onSendCode}>
               <label className="field">
                 <span>Account email</span>
                 <input
@@ -2408,12 +2408,12 @@ function AuthPanel({
                   placeholder="you@example.com"
                 />
               </label>
-              <button className="primary-button" type="submit">
+              <button className="primary-button auth-send-button" type="submit">
                 Send code
               </button>
             </form>
           ) : (
-            <form className="auth-form" onSubmit={onVerifyCode}>
+            <form className="auth-form auth-code-form" onSubmit={onVerifyCode}>
               <label className="field">
                 <span>One-time code</span>
                 <input
@@ -2428,7 +2428,7 @@ function AuthPanel({
                   placeholder="12345678"
                 />
               </label>
-              <button className="secondary-button" disabled={!authCode.trim()} type="submit">
+              <button className="secondary-button auth-verify-button" disabled={!authCode.trim()} type="submit">
                 Verify code
               </button>
               <button className="text-button auth-edit-email" type="button" onClick={onEditAuthEmail}>
