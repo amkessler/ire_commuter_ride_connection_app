@@ -153,9 +153,16 @@ export async function fetchSupabaseBoard() {
   if (firstError) throw firstError;
 
   const participantMap = new Map();
-  directoryResult.data.forEach((row) => {
-    participantMap.set(row.id, fromDbParticipant(row));
-  });
+  const visibleParticipantIds = new Set();
+  groupsResult.data.forEach((row) => visibleParticipantIds.add(row.host_participant_id));
+  membershipsResult.data.forEach((row) => visibleParticipantIds.add(row.participant_id));
+  inquiriesResult.data.forEach((row) => visibleParticipantIds.add(row.participant_id));
+  savesResult.data.forEach((row) => visibleParticipantIds.add(row.participant_id));
+  directoryResult.data
+    .filter((row) => visibleParticipantIds.has(row.id))
+    .forEach((row) => {
+      participantMap.set(row.id, fromDbParticipant(row));
+    });
   ownParticipantsResult.data.forEach((row) => {
     participantMap.set(row.id, fromDbParticipant(row));
   });
