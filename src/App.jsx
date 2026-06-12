@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Bookmark,
   CalendarClock,
   Car,
   CheckCircle2,
@@ -25,6 +26,7 @@ import {
   deleteParticipant,
   fetchSupabaseBoard,
   requestJoinRide,
+  saveRideForLater,
   saveGroupStatus,
   saveParticipantWithGroups,
   sendRideNotification,
@@ -676,6 +678,12 @@ function getInquirySlotIds(group, participantId) {
   return group.inquiries.includes(participantId) ? activeSlotIds(group.availability) : [];
 }
 
+function getSavedSlotIds(group, participantId) {
+  const storedSlotIds = group.savedSlotsByParticipant?.[participantId] || [];
+  if (storedSlotIds.length) return storedSlotIds;
+  return group.savedByParticipant?.includes(participantId) ? activeSlotIds(group.availability) : [];
+}
+
 function getGroupOpenSpotsForSlot(group, slotId) {
   const matchedCount = group.riderIds.filter((riderId) => getMatchedSlotIds(group, riderId).includes(slotId)).length;
   const organizerCount = group.type === "rideshare" ? 1 : 0;
@@ -821,11 +829,12 @@ function getRideCardElementId(groupId) {
 function buildRideActivity(participant, groups, participants) {
   const participantMap = new Map(participants.map((item) => [item.id, item]));
   const incoming = [];
+  const saved = [];
   const outgoing = [];
   const matched = [];
 
   if (!participant) {
-    return { incoming, outgoing, matched };
+    return { incoming, saved, outgoing, matched };
   }
 
   groups.forEach((group) => {
@@ -886,6 +895,25 @@ function buildRideActivity(participant, groups, participants) {
       }
     }
 
+    if (host && group.savedByParticipant?.includes(participant.id)) {
+      const pendingSlotIds = getInquirySlotIds(group, participant.id);
+      const directMatchedSlotIds = getMatchedSlotIds(group, participant.id);
+      const pairMatchedSlotIds = getParticipantPairMatchedSlotIds(participant.id, host.id, groups);
+      const hiddenSlotIds = new Set([...pendingSlotIds, ...directMatchedSlotIds, ...pairMatchedSlotIds]);
+      const savedSlotIds = getSavedSlotIds(group, participant.id).filter((slotId) => !hiddenSlotIds.has(slotId));
+
+      if (savedSlotIds.length) {
+        saved.push({
+          id: `saved-${group.id}-${participant.id}`,
+          groupId: group.id,
+          participantId: participant.id,
+          title: `Saved ${host?.name || "Unknown post"}`,
+          subtitle: `${groupMeta.title} · ${formatSlotIds(savedSlotIds)}`,
+          tag: "Saved",
+        });
+      }
+    }
+
     if (group.riderIds.includes(participant.id)) {
       const matchedSlotIds = getMatchedSlotIds(group, participant.id);
       matched.push({
@@ -899,7 +927,7 @@ function buildRideActivity(participant, groups, participants) {
     }
   });
 
-  return { incoming, outgoing, matched };
+  return { incoming, saved, outgoing, matched };
 }
 
 function App() {
@@ -1356,6 +1384,50 @@ function App() {
     });
   }
 
+  function openSaveSlotAction(groupId) {
+    if (!selectedParticipant) return;
+    const group = groups.find((item) => item.id === groupId);
+    const host = participants.find((participant) => participant.id === group?.hostId);
+    if (!group || !host) return;
+    const sharedOpenSlotIds = getSharedOpenSlotIds(group, selectedParticipant);
+    const directMatchedSlotIds = getMatchedSlotIds(group, selectedParticipant.id);
+    const pairMatchedSlotIds = getParticipantPairMatchedSlotIds(selectedParticipant.id, host.id, groups);
+    const pendingSlotIds = getInquirySlotIds(group, selectedParticipant.id);
+    const unavailableSlotIds = new Set([...directMatchedSlotIds, ...pairMatchedSlotIds, ...pendingSlotIds]);
+    const eligibleSlotIds = sharedOpenSlotIds.filter(
+      (slotId) => !unavailableSlotIds.has(slotId),
+    );
+    const currentSavedSlotIds = getSavedSlotIds(group, selectedParticipant.id).filter((slotId) =>
+      eligibleSlotIds.includes(slotId),
+    );
+
+    if (!sharedOpenSlotIds.length) {
+      setAppError("No shared open conference slots are available for this post.");
+      return;
+    }
+
+    if (!eligibleSlotIds.length) {
+      setAppError("All shared open conference slots are already pending or matched.");
+      return;
+    }
+
+    setSlotAction({
+      mode: "save",
+      groupId,
+      participantId: selectedParticipant.id,
+      title: currentSavedSlotIds.length
+        ? `Update saved slots for ${host.name}`
+        : `Save ${host.name}'s ${getGroupTypeMeta(group.type).title.toLowerCase()}`,
+      description: currentSavedSlotIds.length
+        ? "Change which slots stay in your private saved list. Deselect every slot to remove this save."
+        : "Choose the slots you may want to revisit. Saving is private and will not alert the post owner.",
+      slotIds: eligibleSlotIds,
+      selectedSlotIds: currentSavedSlotIds,
+      submitLabel: currentSavedSlotIds.length ? "Update saved slots" : "Save selected slots",
+      allowEmptySelection: currentSavedSlotIds.length > 0,
+    });
+  }
+
   function openMatchSlotAction(groupId, participantIdToMatch = selectedParticipant?.id) {
     const group = groups.find((item) => item.id === groupId);
     const participantToMatch = participants.find((participant) => participant.id === participantIdToMatch);
@@ -1402,14 +1474,56 @@ function App() {
   }
 
   async function submitSlotAction() {
-    if (!slotAction || !slotAction.selectedSlotIds.length) return;
+    if (!slotAction) return;
+    if (slotAction.mode !== "save" && !slotAction.selectedSlotIds.length) return;
     const action = slotAction;
-    if (action.mode === "interest") {
+    if (action.mode === "save") {
+      await saveRide(action.groupId, action.selectedSlotIds);
+    } else if (action.mode === "interest") {
       await inquire(action.groupId, action.selectedSlotIds);
     } else {
       await commit(action.groupId, action.participantId, action.selectedSlotIds);
     }
     closeSlotAction();
+  }
+
+  async function saveRide(groupId, slotIds = []) {
+    if (!selectedParticipant) return;
+    const group = groups.find((item) => item.id === groupId);
+    if (!group || group.hostId === selectedParticipant.id) return;
+    if (!canParticipantActOnGroup(selectedParticipant, group)) return;
+
+    if (session && supabase) {
+      setIsSyncing(true);
+      setAppError("");
+      try {
+        await saveRideForLater(groupId, selectedParticipant.id, slotIds);
+        await loadRemoteBoard(session);
+      } catch (error) {
+        setAppError(error.message || "Unable to save this ride.");
+      } finally {
+        setIsSyncing(false);
+      }
+      return;
+    }
+
+    const savedByParticipant = new Set(group.savedByParticipant || []);
+    const nextSavedSlotsByParticipant = {
+      ...(group.savedSlotsByParticipant || {}),
+    };
+
+    if (slotIds.length) {
+      savedByParticipant.add(selectedParticipant.id);
+      nextSavedSlotsByParticipant[selectedParticipant.id] = slotIds;
+    } else {
+      savedByParticipant.delete(selectedParticipant.id);
+      delete nextSavedSlotsByParticipant[selectedParticipant.id];
+    }
+
+    updateGroup(groupId, {
+      savedByParticipant: Array.from(savedByParticipant),
+      savedSlotsByParticipant: nextSavedSlotsByParticipant,
+    });
   }
 
   async function inquire(groupId, slotIds = []) {
@@ -1424,6 +1538,12 @@ function App() {
       setAppError("");
       try {
         await requestJoinRide(groupId, selectedParticipant.id, slotIds);
+        const remainingSavedSlotIds = getSavedSlotIds(group, selectedParticipant.id).filter(
+          (slotId) => !slotIds.includes(slotId),
+        );
+        if (remainingSavedSlotIds.length !== getSavedSlotIds(group, selectedParticipant.id).length) {
+          await saveRideForLater(groupId, selectedParticipant.id, remainingSavedSlotIds);
+        }
         try {
           await sendRideNotification(groupId, selectedParticipant.id);
         } catch (notificationError) {
@@ -1440,12 +1560,27 @@ function App() {
 
     const inquiries = new Set(group.inquiries);
     inquiries.add(selectedParticipant.id);
+    const remainingSavedSlotIds = getSavedSlotIds(group, selectedParticipant.id).filter(
+      (slotId) => !slotIds.includes(slotId),
+    );
+    const nextSavedByParticipant = new Set(group.savedByParticipant || []);
+    const nextSavedSlotsByParticipant = {
+      ...(group.savedSlotsByParticipant || {}),
+    };
+    if (remainingSavedSlotIds.length) {
+      nextSavedSlotsByParticipant[selectedParticipant.id] = remainingSavedSlotIds;
+    } else {
+      nextSavedByParticipant.delete(selectedParticipant.id);
+      delete nextSavedSlotsByParticipant[selectedParticipant.id];
+    }
     updateGroup(groupId, {
       inquiries: Array.from(inquiries),
       inquirySlotsByParticipant: {
         ...(group.inquirySlotsByParticipant || {}),
         [selectedParticipant.id]: slotIds,
       },
+      savedByParticipant: Array.from(nextSavedByParticipant),
+      savedSlotsByParticipant: nextSavedSlotsByParticipant,
       status: group.status === "open" ? "pending" : group.status,
     });
   }
@@ -1890,6 +2025,7 @@ function App() {
                   selectedParticipant={selectedParticipant}
                   match={selectedParticipant ? scoreGroupForParticipant(group, selectedParticipant) : null}
                   onInquire={openInterestSlotAction}
+                  onSave={openSaveSlotAction}
                   onCommit={openMatchSlotAction}
                   onAdminRemovePost={adminRemovePost}
                   onStatusChange={(status) => updateGroup(group.id, { status })}
@@ -1930,6 +2066,12 @@ function SlotActionModal({ action, isSyncing, onClose, onSubmit, onToggleSlot })
   const submitButtonRef = useRef(null);
   const previousFocusRef = useRef(null);
   const selectedCount = action.selectedSlotIds.length;
+  const actionEyebrow = action.mode === "match" ? "Confirm match" : action.mode === "save" ? "Save ride" : "Record interest";
+  const canSubmitEmpty = Boolean(action.allowEmptySelection);
+  const submitLabel =
+    action.mode === "save" && selectedCount === 0 && canSubmitEmpty
+      ? "Remove saved ride"
+      : action.submitLabel;
 
   useEffect(() => {
     previousFocusRef.current = document.activeElement instanceof HTMLElement
@@ -1969,7 +2111,7 @@ function SlotActionModal({ action, isSyncing, onClose, onSubmit, onToggleSlot })
       >
         <div className="instructions-modal-header">
           <div>
-            <p className="eyebrow">{action.mode === "match" ? "Confirm match" : "Record interest"}</p>
+            <p className="eyebrow">{actionEyebrow}</p>
             <h2 id="slot-action-title">{action.title}</h2>
           </div>
           <button aria-label="Close slot chooser" className="icon-button" type="button" onClick={onClose}>
@@ -2005,13 +2147,13 @@ function SlotActionModal({ action, isSyncing, onClose, onSubmit, onToggleSlot })
           </button>
           <button
             className="primary-button"
-            disabled={isSyncing || selectedCount === 0}
+            disabled={isSyncing || (selectedCount === 0 && !canSubmitEmpty)}
             ref={submitButtonRef}
             type="button"
             onClick={onSubmit}
           >
             <CheckCircle2 size={16} aria-hidden="true" />
-            {isSyncing ? "Saving..." : action.submitLabel}
+            {isSyncing ? "Saving..." : submitLabel}
           </button>
         </div>
       </section>
@@ -2731,7 +2873,7 @@ function PlanSummary({ editLabel, isRemoving = false, onEdit, onRemove, particip
 }
 
 function RideActivityPanel({ activity, isSyncing, onMarkMatched, onViewGroup }) {
-  const totalCount = activity.incoming.length + activity.outgoing.length + activity.matched.length;
+  const totalCount = activity.saved.length + activity.incoming.length + activity.outgoing.length + activity.matched.length;
 
   return (
     <section className="simple-panel ride-activity-panel" aria-label="Your ride activity">
@@ -2739,7 +2881,7 @@ function RideActivityPanel({ activity, isSyncing, onMarkMatched, onViewGroup }) 
         <div>
           <p className="eyebrow">Your activity</p>
           <h2>Your ride activity</h2>
-          <p>Track contacts and matches without scanning every post.</p>
+          <p>Track saved rides, contacts, and matches without scanning every post.</p>
         </div>
         <span className="activity-count">
           {totalCount} {pluralize(totalCount, "item")}
@@ -2747,6 +2889,14 @@ function RideActivityPanel({ activity, isSyncing, onMarkMatched, onViewGroup }) 
       </div>
 
       <div className="ride-activity-sections">
+        <RideActivitySection
+          emptyText="No saved rides yet."
+          isSyncing={isSyncing}
+          items={activity.saved}
+          onMarkMatched={onMarkMatched}
+          onViewGroup={onViewGroup}
+          title="Saved rides"
+        />
         <RideActivitySection
           emptyText="No one has recorded contact with your posts yet."
           isSyncing={isSyncing}
@@ -2792,7 +2942,11 @@ function RideActivitySection({ emptyText, isSyncing, items, onMarkMatched, onVie
                 <strong>{item.title}</strong>
                 <span>{item.subtitle}</span>
               </div>
-              <span className={`activity-tag ${item.tag === "Matched" ? "matched" : "pending"}`}>
+              <span
+                className={`activity-tag ${
+                  item.tag === "Matched" ? "matched" : item.tag === "Saved" ? "saved" : "pending"
+                }`}
+              >
                 {item.tag}
               </span>
               <div className="activity-actions">
@@ -2998,6 +3152,7 @@ function RideCard({
   match,
   onAdminRemovePost,
   onInquire,
+  onSave,
   onCommit,
   onStatusChange,
 }) {
@@ -3046,6 +3201,11 @@ function RideCard({
   const interestEligibleSlotIds = sharedSlotIds.filter(
     (slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0 && !visibleMatchedSlotIds.includes(slotId),
   );
+  const savedSlotIds = selectedParticipant ? getSavedSlotIds(group, selectedParticipant.id) : [];
+  const visibleSavedSlotIds = savedSlotIds.filter((slotId) => interestEligibleSlotIds.includes(slotId));
+  const visibleSavedSlotsText = formatSlotIds(visibleSavedSlotIds);
+  const visibleSavedSlotsSummary = formatSlotSummary(visibleSavedSlotIds);
+  const hasVisibleSavedSlots = visibleSavedSlotIds.length > 0;
   const matchedStatusText = visibleMatchedSlotsText
     ? `Matched for ${visibleMatchedSlotsSummary}`
     : groupMeta.committedButtonLabel;
@@ -3076,6 +3236,13 @@ function RideCard({
     interestEligibleSlotIds.length > 0 &&
     canActOnGroup;
   const canInquire = canStartInterest;
+  const canManageSavedRide =
+    selectedParticipant &&
+    !isHost &&
+    !alreadyInquired &&
+    status !== "full" &&
+    interestEligibleSlotIds.length > 0 &&
+    canActOnGroup;
   const hasContactMethod = Boolean(host?.email || host?.phone);
   const hasRevealedContact = revealedContacts.email || revealedContacts.phone;
   const canRecordContact = canInquire && hasRevealedContact;
@@ -3109,6 +3276,8 @@ function RideCard({
     contactStatusText = groupMeta.inquiredLabel;
   } else if (isHost) {
     contactStatusText = "Your post";
+  } else if (hasVisibleSavedSlots) {
+    contactStatusText = `Saved for ${visibleSavedSlotsSummary}`;
   } else if (canInquire) {
     contactStatusText = hasContactMethod ? "Reveal first" : "Contact unavailable";
   } else if (status === "committed") {
@@ -3134,6 +3303,14 @@ function RideCard({
     actionGuidance = "Contact noted. The driver can mark the match.";
   } else if (alreadyInquired) {
     actionGuidance = "Contact noted. Mark matched after agreement.";
+  } else if (canManageSavedRide && hasRevealedContact && hasVisibleSavedSlots) {
+    actionGuidance = "Saved privately. Record contact after you email or call.";
+  } else if (canManageSavedRide && hasRevealedContact) {
+    actionGuidance = "Save privately, or record contact after you email or call.";
+  } else if (canManageSavedRide && hasVisibleSavedSlots) {
+    actionGuidance = `Saved for ${visibleSavedSlotsText}. Reveal contact details when you're ready.`;
+  } else if (canManageSavedRide) {
+    actionGuidance = "Save this privately now, or reveal contact details when you're ready.";
   } else if (canInquire && !hasRevealedContact && group.type === "carpool-request") {
     actionGuidance = "Reveal email or phone to offer help, then note it here.";
   } else if (canInquire && !hasRevealedContact) {
@@ -3307,10 +3484,10 @@ function RideCard({
       )}
 
       <div className={`card-actions${canManageStatus ? "" : " no-status-control"}`}>
-        {canRecordContact ? (
-          <button className="secondary-button" type="button" onClick={() => onInquire(group.id)}>
-            <CircleAlert size={15} aria-hidden="true" />
-            {groupMeta.inquireLabel}
+        {canManageSavedRide ? (
+          <button className="secondary-button" type="button" onClick={() => onSave(group.id)}>
+            <Bookmark size={15} aria-hidden="true" />
+            {hasVisibleSavedSlots ? "Update saved" : "Save"}
           </button>
         ) : canUpdateInterest ? (
           <button className="secondary-button" type="button" onClick={() => onInquire(group.id)}>
@@ -3318,12 +3495,18 @@ function RideCard({
             Update interest
           </button>
         ) : (
-          <span className={`action-status${showsMatchedState ? " is-matched" : ""}`}>
+          <span className={`action-status${showsMatchedState ? " is-matched" : hasVisibleSavedSlots ? " is-saved" : ""}`}>
             {(showsMatchedState || alreadyInquired) && <CheckCircle2 size={15} aria-hidden="true" />}
+            {hasVisibleSavedSlots && !showsMatchedState && !alreadyInquired && <Bookmark size={15} aria-hidden="true" />}
             {contactStatusText}
           </span>
         )}
-        {canMarkMatchFromFooter ? (
+        {canRecordContact ? (
+          <button className="primary-button small" type="button" onClick={() => onInquire(group.id)}>
+            <CircleAlert size={15} aria-hidden="true" />
+            {groupMeta.inquireLabel}
+          </button>
+        ) : canMarkMatchFromFooter ? (
           <button className="primary-button small" type="button" onClick={() => onCommit(group.id, footerMatchParticipantId)}>
             <CheckCircle2 size={15} aria-hidden="true" />
             {footerHostMatch ? "Mark matched" : groupMeta.commitLabel}

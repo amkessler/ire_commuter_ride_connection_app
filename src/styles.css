@@ -1525,6 +1525,11 @@ button:focus-visible {
   color: #806014;
 }
 
+.activity-tag.saved {
+  background: #e9f2fb;
+  color: #24577f;
+}
+
 .activity-tag.matched {
   background: #e4f4ed;
   color: #146344;
@@ -1970,6 +1975,12 @@ button:focus-visible {
 
 .action-status.is-matched {
   color: var(--green);
+}
+
+.action-status.is-saved {
+  border-color: #c9dbea;
+  background: #f1f7fc;
+  color: #24577f;
 }
 
 .action-note {

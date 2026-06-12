@@ -44,9 +44,10 @@ export function toDbParticipant(participant, userId) {
   };
 }
 
-export function fromDbGroup(row, memberships = [], inquiries = []) {
+export function fromDbGroup(row, memberships = [], inquiries = [], saves = []) {
   const groupMemberships = memberships.filter((membership) => membership.group_id === row.id);
   const groupInquiries = inquiries.filter((inquiry) => inquiry.group_id === row.id);
+  const groupSaves = saves.filter((save) => save.group_id === row.id);
 
   return {
     id: row.id,
@@ -67,6 +68,13 @@ export function fromDbGroup(row, memberships = [], inquiries = []) {
       groupInquiries.map((inquiry) => [
         inquiry.participant_id,
         Array.isArray(inquiry.interest_slots) ? inquiry.interest_slots : [],
+      ]),
+    ),
+    savedByParticipant: groupSaves.map((save) => save.participant_id),
+    savedSlotsByParticipant: Object.fromEntries(
+      groupSaves.map((save) => [
+        save.participant_id,
+        Array.isArray(save.saved_slots) ? save.saved_slots : [],
       ]),
     ),
     status: row.status,
@@ -116,6 +124,7 @@ export async function fetchSupabaseBoard() {
     groupsResult,
     membershipsResult,
     inquiriesResult,
+    savesResult,
     roleResult,
     adminActivityResult,
   ] =
@@ -125,6 +134,7 @@ export async function fetchSupabaseBoard() {
       supabase.from("ride_groups").select("*").order("created_at", { ascending: true }),
       supabase.from("ride_memberships").select("*"),
       supabase.from("ride_inquiries").select("*"),
+      supabase.from("ride_saves").select("*"),
       supabase.rpc("get_my_role"),
       supabase.from("admin_activity_log").select("*").order("created_at", { ascending: false }).limit(25),
     ]);
@@ -135,6 +145,7 @@ export async function fetchSupabaseBoard() {
     groupsResult.error,
     membershipsResult.error,
     inquiriesResult.error,
+    savesResult.error,
     roleResult.error,
     adminActivityResult.error,
   ].find(Boolean);
@@ -152,7 +163,7 @@ export async function fetchSupabaseBoard() {
   return {
     participants: Array.from(participantMap.values()),
     groups: groupsResult.data.map((row) =>
-      fromDbGroup(row, membershipsResult.data, inquiriesResult.data),
+      fromDbGroup(row, membershipsResult.data, inquiriesResult.data, savesResult.data),
     ),
     role: roleResult.data || "user",
     adminActivity: (adminActivityResult.data || []).map(fromDbAdminActivity),
@@ -234,6 +245,16 @@ export async function adminRemoveParticipantPost(participantId, reason) {
 export async function requestJoinRide(groupId, participantId, slotIds) {
   if (!supabase) throw new Error("Supabase is not configured.");
   const { error } = await supabase.rpc("request_join_ride", {
+    p_group_id: groupId,
+    p_participant_id: participantId,
+    p_slot_ids: slotIds,
+  });
+  if (error) throw error;
+}
+
+export async function saveRideForLater(groupId, participantId, slotIds) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { error } = await supabase.rpc("save_ride_for_later", {
     p_group_id: groupId,
     p_participant_id: participantId,
     p_slot_ids: slotIds,
