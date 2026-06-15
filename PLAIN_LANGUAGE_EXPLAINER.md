@@ -8,7 +8,7 @@ A spreadsheet can tell you that Maya is offering two seats and Jon needs a ride.
 
 Think of it less like a signup form and more like a connection board for conference commuting.
 
-The current app is the intentionally calmer version of the ride connection idea. Earlier design work still informed the model, but this version asks users to do two main things: describe their ride plan, then review likely matches. It grew out of a stakeholder question: "What would this look like if we made the interface much simpler?"
+The current app is the intentionally calmer version of the ride connection idea. Earlier design work still informed the model, but this version focuses the interface around three practical areas: `Your plan`, `Likely matches`, and, for signed-in users, `Your ride activity`. It grew out of a stakeholder question: "What would this look like if we made the interface much simpler?"
 
 People are not just entries. They are moving parts:
 
@@ -23,9 +23,9 @@ The app is built around those questions.
 
 ## What The App Does
 
-At a high level, the app has three jobs.
+At a high level, the app has four jobs.
 
-First, it lets an attendee submit one ride profile. They can enter their name, contact details, neighborhood, regional corridor, availability, and whether they are offering a carpool seat, looking for a carpool seat, trying to split an Uber/Lyft, or open to one of the mixed options. Signed-in users can later edit or remove that post.
+First, it lets an attendee submit one ride profile. They can enter their name, contact details, neighborhood, regional corridor, availability, and whether they can drive, need a carpool seat, want to split an Uber/Lyft, or are open to one of the mixed options. Signed-in users can later edit their ride info or remove their hosted ride posts while keeping their profile details saved for a future post.
 
 Second, it displays active ride options. These are shown as ride cards. A card might represent a driver carpool, where a person has a car and a fixed number of carpool seats. It might represent a carpool request, where someone needs a seat. Or it might represent a shared rideshare pool, where people are trying to split an Uber or Lyft.
 
@@ -33,13 +33,13 @@ Third, it helps users judge fit. The app scores potential matches internally bas
 
 Fit is guidance, not a hard wall. If a post does not match someone's current plan, the card shows a `Not a fit` warning but still lets them save the post, reveal contact details, and record contact or a help offer when the post has open trip slots. That matters because real people may agree to flexible arrangements the scoring model cannot predict, such as meeting at a halfway point.
 
-Fourth, it supports a more careful coordination flow. A user can reveal email or phone details, contact the other person outside the app, and then record that contact or help offer. They cannot simply force themselves into someone else's ride. A final match should happen only after the people involved contact each other and agree.
+Fourth, it supports a more careful coordination flow. A user can save a post privately, reveal email or phone details, contact the other person outside the app, and then record that contact or help offer for specific conference trip slots. They cannot simply force themselves into someone else's ride. A final match should happen only after the people involved contact each other and agree. When signed-in users record contact or a help offer, the app also tries to send the post owner a lightweight email notification.
 
 The app now has two operating modes.
 
 When someone is signed out, it still behaves like a prototype: it shows realistic sample data and can keep local demo changes in the browser. That is useful for demos, design review, and quick testing.
 
-When someone signs in, the app uses Supabase for shared data. Supabase handles email sign-in, the Postgres database, row-level security, and admin MFA requirements. That means the project has moved past "just a front-end mockup" while still keeping the sample-data mode that made early iteration fast.
+When someone signs in, the app uses Supabase for shared data. Supabase handles email-code sign-in, the Postgres database, row-level security, notification records, and admin MFA requirements. That means the project has moved past "just a front-end mockup" while still keeping the sample-data mode that made early iteration fast.
 
 The first goal was to model the workflow clearly. Once the workflow made sense, Supabase became the shared backend.
 
@@ -214,10 +214,16 @@ This project is still compact enough that one main app file is understandable, b
 
 ## The Data Model
 
-The app has two main kinds of data:
+The app has two main visible kinds of data:
 
 - Participants
 - Ride groups
+
+The database also has relationship records that connect people to ride groups:
+
+- Saved ride slots
+- Pending contact or help-offer slots
+- Confirmed matched slots
 
 ## Participants
 
@@ -299,16 +305,16 @@ This is a classic data-modeling pattern. Instead of duplicating the same informa
 
 Names are not reliable identifiers. Two people can have the same name. Someone can change how their name appears. Email addresses are better but should not always be used as internal IDs.
 
-So the app uses simple generated IDs like:
+So the app-shaped data uses IDs like:
 
 ```text
 p1
 g1
 ```
 
-For new entries, it uses `Date.now()` to create IDs based on the current timestamp.
+In signed-out sample mode, new entries still use `Date.now()` to create simple browser-local IDs.
 
-That is fine for a prototype. In production, a backend database would generate more robust IDs.
+In signed-in mode, Supabase generates real database UUIDs. That is one of the differences between sample mode and the shared backend.
 
 ## Availability: Why It Uses Booleans
 
@@ -518,13 +524,14 @@ Here is the journey when someone fills out the form.
 3. Each input calls `updateFormField` or `updateAvailability`.
 4. When the user submits, `handleSubmit` creates a new participant.
 5. If the participant is offering carpool seats, the app creates a new carpool group.
-6. If the participant wants to split Uber/Lyft, the app creates a rideshare group.
-7. The participant and any new groups are saved into app state.
-8. If the user is signed out, the same data is written into local storage.
-9. If the user is signed in, the participant is upserted to Supabase.
-10. If the participant is hosting a carpool or rideshare group, the hosted group is upserted too.
-11. If the signed-in user removes their post, the app deletes their hosted ride groups but keeps their participant row so name, contact details, and ride-profile fields can prefill a future post.
-12. React reloads the board and re-renders the interface.
+6. If the participant is looking for a carpool seat, the app creates a carpool request group.
+7. If the participant wants to split Uber/Lyft, the app creates a rideshare group.
+8. The participant and any new groups are saved into app state.
+9. If the user is signed out, the same data is written into local storage.
+10. If the user is signed in, the participant is upserted to Supabase.
+11. If the participant is hosting any carpool offer, carpool request, or rideshare group, the hosted group is upserted too.
+12. If the signed-in user removes their post, the app deletes their hosted ride groups but keeps their participant row so name, contact details, and ride-profile fields can prefill a future post.
+13. React reloads the board and re-renders the interface.
 
 That is the central React loop:
 
@@ -553,6 +560,9 @@ The main database tables are:
 - `ride_groups`: carpool and Uber/Lyft split groups.
 - `ride_memberships`: final matched riders, including which trip slots are matched.
 - `ride_inquiries`: the internal contact/help markers for people who have reached out but are not matched yet, including which trip slots are pending.
+- `ride_saves`: private saved-post records, including which trip slots were saved.
+- `ride_notification_events`: one record per requester/post notification attempt.
+- `admin_activity_log`: recent admin moderation activity.
 - `admin_users`: the list of auth users who are allowed to become admins.
 
 The `participant_directory` table is worth calling out. Earlier, this was modeled as a view. The safer version is a real table with row-level security. A trigger keeps it synchronized with `participants`. In the current attendee-board version, visible directory rows include contact fields because the app is designed for signed-in attendees to reveal email or phone and coordinate directly outside the app. The reveal buttons are a user-experience step, not a cryptographic privacy boundary. Notes are also visible to signed-in users, so the UI tells users that notes should not contain private information.
@@ -594,8 +604,10 @@ The app uses a few Supabase RPC functions:
 - `save_ride_for_later`
 - `request_join_ride`
 - `commit_to_ride`
+- `admin_update_group_status`
+- `admin_remove_participant_post`
 
-Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can privately save posts, record contact/help, or record an agreed match.
+Supabase's advisor warns that signed-in users can execute these security-definer functions. That warning is useful, but in this app those RPCs are intentional. They are the narrow, audited doors through which signed-in users can privately save posts, record contact/help, or record an agreed match. The admin RPCs use the same pattern, but require MFA-verified admin access before they change status or remove a post.
 
 The ride-action RPCs check the submitted participant, ride group, and selected slot IDs before changing data. Fit is intentionally not a hard database requirement anymore: users may save or contact non-fit posts when there are open slots. The RPCs still reject own-post actions, already-matched slots, inactive selected slots, manual full status, full slots, missing pending contact before a match, and users who do not own the submitted participant unless the session has MFA-verified admin access.
 
@@ -606,6 +618,8 @@ The `commit_to_ride` name is now a little historical. In the simple interface, t
 - For Uber/Lyft splits, either the organizer or the contacted participant can mark the match after the contact marker exists.
 
 The selected slots are important. `save_ride_for_later` records private saved slots, `request_join_ride` records pending interest for the chosen slots, and `commit_to_ride` records only the selected agreed slots and leaves any other pending slots pending.
+
+After `request_join_ride` succeeds in signed-in mode, the frontend calls the `send-ride-notification` Edge Function. That function verifies the requester, confirms the inquiry exists, writes or reuses a notification-event row, and sends a minimal Resend email asking the post owner to sign in and review the possible match. The alert is helpful, but it does not replace direct coordination by email or phone.
 
 The current migration also keeps old slot state from becoming dangerous. If availability changes after someone saved, contacted, or matched a slot, the database trims `saved_slots`, `interest_slots`, and `matched_slots` down to the post's still-active slots.
 
@@ -621,10 +635,14 @@ The main components are:
 
 - `App`
 - `AuthPanel`
+- `AdminMfaPanel`
+- `AdminToolsPanel`
 - `InstructionsModal`
+- `SlotActionModal`
 - `BoardControls`
 - `EntryForm`
 - `PlanSummary`
+- `RideActivityPanel`
 - `PrototypePreviewTools`
 - `RideCard`
 - `FitLegend`
@@ -642,7 +660,7 @@ For example, `RideCard` receives:
 - The participant list so it can look up names.
 - The selected participant so it can calculate actions.
 - The match category and route fit details.
-- Functions for direct-contact markers, match recording, and status changes.
+- Functions for saving slots, direct-contact markers, match recording, admin removal, and status changes.
 
 This is called passing props.
 
@@ -670,6 +688,7 @@ The app uses `useMemo` for derived values:
 
 - Filtered and sorted ride groups.
 - Best matches for the selected participant.
+- Saved, incoming, outgoing, and matched activity lists.
 - Summary stats.
 
 Derived values are values you can calculate from existing state.
@@ -700,16 +719,18 @@ There is no giant hero section. There is no decorative pitch copy. The first scr
 
 The first version put too much information on one screen. It worked, but it felt busy. That was useful feedback: the app was doing the right things, but it was asking users to absorb too much at once.
 
-The current app deliberately steps back from that and uses two main areas:
+The current app deliberately steps back from that and uses a small set of focused areas:
 
 - `Your plan`: enter or update the one ride profile tied to the user.
 - `Likely matches`: browse the best open carpool offers, carpool requests, and Uber/Lyft split groups.
+- `Your ride activity`: track saved rides, incoming contact/help offers, people you contacted, and confirmed matches. This appears for signed-in users after they have a profile.
 
-That structure lowers the mental load. It is the difference between making someone walk through four rooms and giving them one clean desk with an inbox and an outbox.
+That structure lowers the mental load. It gives the user one place to edit their own plan, one place to browse the board, and one place to return to work already in progress.
 
-Inside the main view, the layout has three conceptual zones:
+Inside the main view, the layout has four conceptual zones:
 
 - Form area: the user's current ride plan.
+- Activity area: saved posts, pending contact, and matched rides.
 - Match area: likely rides and requests.
 - Compact controls: search, corridor, status filtering, and route-fit context.
 
@@ -717,14 +738,15 @@ This matches the user's workflow:
 
 1. Sign in or use sample mode.
 2. Add or review ride information.
-3. Browse available ride groups.
-4. Evaluate matches from the correct person's point of view.
-5. Contact the other person directly by email or phone, mark that contact happened, then mark a match after agreement.
-6. Keep the post current by editing it or removing it from the board when it is no longer needed.
+3. Save posts that may be worth revisiting.
+4. Browse available ride groups.
+5. Evaluate matches from the correct person's point of view.
+6. Contact the other person directly by email or phone, mark that contact happened for selected slots, then mark selected slots as matched after agreement.
+7. Keep the post current by editing it or removing it from the board when it is no longer needed.
 
 The app uses cards for individual rides, which makes sense because each ride is a repeated item with its own status, people, capacity, and actions.
 
-The current app keeps each ride card summary-first. The card shows the ride type, route area, trip slots, capacity, contact buttons, and next action immediately. Longer notes and contact/match history live behind `Details and history`, which keeps the board from feeling like every card is shouting at once.
+The current app keeps each ride card summary-first. The card shows the ride type, route area, trip slots, capacity, contact buttons, and next action immediately. Saving, recording interest, and marking matches open a slot chooser so the action applies only to the right conference trips. Longer notes and contact/match history live behind `Details and history`, which keeps the board from feeling like every card is shouting at once.
 
 The app avoids nested cards and keeps the main board organized with clear panels.
 
@@ -758,6 +780,7 @@ Icons are used for:
 - Filters.
 - Contact actions.
 - Status actions.
+- Saved-post actions.
 
 The goal is not decoration. Icons help users scan the interface faster.
 
@@ -1097,8 +1120,10 @@ That warning is useful. It made us inspect the functions carefully.
 But the answer was not to blindly revoke everything. The app needs narrow RPCs for:
 
 - Getting the current user's role.
+- Saving a post privately for selected slots.
 - Requesting to join a ride.
 - Marking an agreed match.
+- Admin status changes and post removal, after MFA verification.
 
 The fix was to move general helper functions out of the exposed public surface, revoke unneeded execution grants, and leave only the intentional app RPCs callable by authenticated users.
 
@@ -1281,9 +1306,10 @@ That may be right for a controlled attendee group. It may not be right for a ful
 
 How to avoid trouble:
 
-- Keep contact details hidden until the user chooses to reveal them.
+- Keep contact details hidden in the card UI until the user chooses to reveal them.
 - Let people copy or use the revealed details outside the app.
-- Let users choose what to share.
+- Be clear that the reveal button is not a database privacy boundary in the current signed-in attendee board.
+- Let users choose whether to add a phone number; email is required for account and coordination.
 - Add organizer moderation.
 - Consider using built-in contact request messages instead of direct contact display.
 
@@ -1311,7 +1337,7 @@ How to avoid trouble:
 
 ## Pitfall: Overbuilding Too Early
 
-It would be easy to spend days on authentication, database schema, admin permissions, and notifications before knowing whether the ride model works.
+At the beginning, it would have been easy to spend days on authentication, database schema, admin permissions, and notifications before knowing whether the ride model worked.
 
 How to avoid trouble:
 
@@ -1366,6 +1392,7 @@ In this app it handles:
 - Row-level security.
 - Database migrations.
 - RPC functions for ride actions.
+- Edge Functions for notification email.
 - MFA-aware admin access.
 
 Supabase is helpful here because the app needs a real shared board, not just a single-user browser notebook.
@@ -1432,7 +1459,7 @@ src/supabaseData.js
   translates between React-shaped data and database rows
   fetches the board
   saves participants and ride groups
-  calls ride action RPCs
+  calls ride action RPCs and notification functions
 
 supabase/migrations/
   defines tables, policies, functions, and constraints
@@ -1446,6 +1473,7 @@ browser localStorage
 Supabase
   stores shared signed-in app data
   enforces RLS and admin MFA rules
+  records notification and admin activity
 ```
 
 And here is the user workflow:
@@ -1470,7 +1498,7 @@ attendee clicks Reveal email or Reveal phone
   -> people talk directly outside the app
   -> attendee chooses the slots they contacted about
   -> app records pending interest for those slots
-  -> post owner receives a lightweight email alert
+  -> post owner may receive a lightweight email alert
   -> allowed user chooses the slots everyone agreed to
   -> app records only those selected slots as matched
   -> any other pending slots stay pending
@@ -1483,14 +1511,14 @@ This app is now a working React/Supabase foundation, but it is not the final pro
 Good next steps:
 
 1. Add timestamps and update reminders.
-2. Add organizer exports.
+2. Expand organizer exports if the current admin CSV is not enough.
 3. Add optional pickup coordinates or meeting points.
 4. Add real route/detour estimates.
 5. Add privacy controls for contact information.
 6. Add more dedicated admin moderation screens if the board oversight tools need to grow.
 7. Add import from the original Google Sheet.
 8. Keep the hosted email template under source-control notes/checklists so future changes do not accidentally remove `{{ .Token }}`.
-9. Deploy with production redirect URLs.
+9. Keep production and local auth redirect URLs in sync as deployment URLs change.
 
 ## Backend Options We Considered
 
@@ -1621,6 +1649,41 @@ ride_inquiries
   participant_id
   interest_slots
   created_at
+
+ride_saves
+  group_id
+  participant_id
+  saved_slots
+  created_at
+  updated_at
+
+ride_notification_events
+  id
+  event_type
+  group_id
+  requester_participant_id
+  recipient_participant_id
+  requester_user_id
+  recipient_user_id
+  recipient_email
+  status
+  email_provider
+  provider_message_id
+  error_message
+  details
+  created_at
+  sent_at
+  updated_at
+
+admin_activity_log
+  id
+  actor_user_id
+  action
+  target_user_id
+  target_participant_id
+  target_group_id
+  details
+  created_at
 ```
 
 Availability is stored as JSON on participants and ride groups. That keeps the first version simple while still being structured enough for matching.
@@ -1630,6 +1693,8 @@ The database also includes triggers and helper functions:
 - To keep `participant_directory` synced.
 - To calculate open spots.
 - To record contact/help and mark agreed matches through controlled RPCs.
+- To save posts privately for selected slots.
+- To record notification attempts.
 - To validate ride-action compatibility before recording contact/help or matches.
 - To enforce admin access only after MFA.
 
@@ -1736,10 +1801,12 @@ For visual checks, open the app in a browser and inspect:
 - Match ranking.
 - Ride cards.
 - Capacity meters.
-- Inquiry, offer-help, and match actions.
+- Save, contact, offer-help, and match actions.
+- The `Your ride activity` panel.
 - Per-slot contact and match state, including a case where one slot is matched and another remains pending.
 - The how-to modal.
 - The signed-in post removal flow.
+- Admin CSV export, admin filters, and admin remove-post flow when MFA credentials are available.
 - Status filtering.
 - Signed-out sample mode.
 - Signed-in Supabase mode, when credentials are available.
@@ -1761,6 +1828,12 @@ Do not skip visual inspection. Front-end bugs often live in the space between "t
 `inquiries`: The internal database name for participants who have marked contact or offered help but are not matched yet. In the UI, these are presented as contact/help markers.
 
 `interest_slots`: The selected conference trip slots that a contact/help marker applies to.
+
+`saved_slots`: The selected conference trip slots someone privately saved for later review.
+
+`ride notification`: A best-effort email alert sent after contact/help is recorded. It tells the post owner to sign in and review the possible match; it does not replace direct email or phone coordination.
+
+`admin activity`: A moderation log entry for actions such as status changes or post removal.
 
 `corridor`: A regional route bucket, such as DC Northwest or Arlington/Alexandria.
 
