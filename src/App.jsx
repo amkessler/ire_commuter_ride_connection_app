@@ -700,6 +700,27 @@ function getSavableSlotIds(group, participant, host, groups) {
   return openSlotIds.filter((slotId) => !unavailableSlotIds.has(slotId));
 }
 
+function getUnavailableSavedRideMessage(group, participant, host, groups, savedSlotIds) {
+  const status = effectiveStatus(group);
+  const pendingSlotIds = getInquirySlotIds(group, participant.id);
+  const directMatchedSlotIds = getMatchedSlotIds(group, participant.id);
+  const pairMatchedSlotIds = getParticipantPairMatchedSlotIds(participant.id, host.id, groups);
+
+  if (savedSlotIds.some((slotId) => directMatchedSlotIds.includes(slotId) || pairMatchedSlotIds.includes(slotId))) {
+    return "Saved slot is already matched.";
+  }
+
+  if (savedSlotIds.some((slotId) => pendingSlotIds.includes(slotId))) {
+    return "Saved slot is already in your contact list.";
+  }
+
+  if (status === "full" || !savedSlotIds.some((slotId) => getGroupOpenSpotsForSlot(group, slotId) > 0)) {
+    return "No open spots remain for your saved slot.";
+  }
+
+  return "This saved ride is not currently available.";
+}
+
 function getParticipantPairMatchedSlotIds(firstParticipantId, secondParticipantId, groups) {
   const matchedSlotIds = new Set();
 
@@ -900,16 +921,22 @@ function buildRideActivity(participant, groups, participants) {
 
     if (host && group.savedByParticipant?.includes(participant.id)) {
       const savableSlotIds = getSavableSlotIds(group, participant, host, groups);
-      const savedSlotIds = getSavedSlotIds(group, participant.id).filter((slotId) => savableSlotIds.includes(slotId));
+      const savedSlotIds = getSavedSlotIds(group, participant.id);
+      const visibleSavedSlotIds = savedSlotIds.filter((slotId) => savableSlotIds.includes(slotId));
 
       if (savedSlotIds.length) {
+        const hasOpenSavedSlots = visibleSavedSlotIds.length > 0;
         saved.push({
           id: `saved-${group.id}-${participant.id}`,
           groupId: group.id,
           participantId: participant.id,
           title: `Saved ${host?.name || "Unknown post"}`,
-          subtitle: `${groupMeta.title} · ${formatSlotIds(savedSlotIds)}`,
-          tag: "Saved",
+          subtitle: `${groupMeta.title} · ${formatSlotIds(hasOpenSavedSlots ? visibleSavedSlotIds : savedSlotIds)}`,
+          tag: hasOpenSavedSlots ? "Saved" : "Unavailable",
+          warning: hasOpenSavedSlots
+            ? ""
+            : getUnavailableSavedRideMessage(group, participant, host, groups, savedSlotIds),
+          isUnavailable: !hasOpenSavedSlots,
         });
       }
     }
@@ -2974,14 +3001,26 @@ function RideActivitySection({ emptyText, isSyncing, items, onMarkMatched, onVie
       {items.length ? (
         <div className="activity-list">
           {items.map((item) => (
-            <div className="activity-row" key={item.id}>
+            <div className={`activity-row${item.isUnavailable ? " is-unavailable" : ""}`} key={item.id}>
               <div className="activity-row-main">
                 <strong>{item.title}</strong>
                 <span>{item.subtitle}</span>
+                {item.warning && (
+                  <span className="activity-warning">
+                    <CircleAlert size={13} aria-hidden="true" />
+                    {item.warning}
+                  </span>
+                )}
               </div>
               <span
                 className={`activity-tag ${
-                  item.tag === "Matched" ? "matched" : item.tag === "Saved" ? "saved" : "pending"
+                  item.tag === "Matched"
+                    ? "matched"
+                    : item.tag === "Saved"
+                      ? "saved"
+                      : item.tag === "Unavailable"
+                        ? "unavailable"
+                        : "pending"
                 }`}
               >
                 {item.tag}

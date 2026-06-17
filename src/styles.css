@@ -1530,6 +1530,11 @@ button:focus-visible {
   background: #fbfdfb;
 }
 
+.activity-row.is-unavailable {
+  border-color: #dfded7;
+  background: #f7f7f3;
+}
+
 .activity-row-main {
   min-width: 0;
 }
@@ -1552,6 +1557,23 @@ button:focus-visible {
   line-height: 1.3;
 }
 
+.activity-row.is-unavailable .activity-row-main strong {
+  color: #59636c;
+}
+
+.activity-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: #735f24;
+  font-weight: 800;
+}
+
+.activity-warning svg {
+  flex: 0 0 auto;
+}
+
 .activity-tag {
   align-self: start;
   border-radius: 999px;
@@ -1568,6 +1590,11 @@ button:focus-visible {
 .activity-tag.saved {
   background: #e9f2fb;
   color: #24577f;
+}
+
+.activity-tag.unavailable {
+  background: #ebe9e1;
+  color: #615b4c;
 }
 
 .activity-tag.matched {
