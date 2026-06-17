@@ -628,6 +628,14 @@ function effectiveStatus(group) {
   return group.status;
 }
 
+function getConfirmedMatchCount(group) {
+  return group.riderIds.filter((riderId) => getMatchedSlotIds(group, riderId).length > 0).length;
+}
+
+function hasConfirmedMatch(group) {
+  return getConfirmedMatchCount(group) > 0;
+}
+
 function getParticipantRideCapabilities(participant) {
   if (!participant) {
     return {
@@ -1705,7 +1713,10 @@ function App() {
         const matchesQuery = text.includes(query.toLowerCase());
         const matchesCorridor = corridorFilter === "all" || group.corridor === corridorFilter;
         const status = effectiveStatus(group);
+        const adminLifecycleFilter =
+          hasAdminAccess && (adminPostFilter === "matched" || adminPostFilter === "full");
         const matchesStatus =
+          adminLifecycleFilter ||
           statusFilter === "all" ||
           (statusFilter === "active" && status !== "full") ||
           status === statusFilter;
@@ -1713,7 +1724,9 @@ function App() {
           !hasAdminAccess ||
           adminPostFilter === "all" ||
           (adminPostFilter === "stale" && isStalePost(group, host)) ||
-          (adminPostFilter === "no-activity" && hasNoPostActivity(group));
+          (adminPostFilter === "no-activity" && hasNoPostActivity(group)) ||
+          (adminPostFilter === "matched" && hasConfirmedMatch(group)) ||
+          (adminPostFilter === "full" && status === "full");
         return matchesQuery && matchesCorridor && matchesStatus && matchesAdminFilter;
       })
       .sort((a, b) => {
@@ -1762,11 +1775,16 @@ function App() {
     return groups.reduce(
       (totals, group) => {
         const host = participants.find((participant) => participant.id === group.hostId);
+        const status = effectiveStatus(group);
+        const confirmedMatchCount = getConfirmedMatchCount(group);
         if (isStalePost(group, host)) totals.stale += 1;
         if (hasNoPostActivity(group)) totals.noActivity += 1;
+        if (confirmedMatchCount > 0) totals.matchedPosts += 1;
+        totals.confirmedMatches += confirmedMatchCount;
+        if (status === "full") totals.full += 1;
         return totals;
       },
-      { stale: 0, noActivity: 0 },
+      { stale: 0, noActivity: 0, matchedPosts: 0, confirmedMatches: 0, full: 0 },
     );
   }, [groups, participants]);
 
@@ -2540,6 +2558,8 @@ function AdminToolsPanel({
           <span>Admin filter</span>
           <select value={adminPostFilter} onChange={(event) => setAdminPostFilter(event.target.value)}>
             <option value="all">All posts</option>
+            <option value="matched">Posts with confirmed matches</option>
+            <option value="full">Full or closed posts</option>
             <option value="stale">Stale posts, 48+ hours</option>
             <option value="no-activity">No contact or matches</option>
           </select>
@@ -2550,6 +2570,15 @@ function AdminToolsPanel({
           </span>
           <span>
             <strong>{totalCount}</strong> total
+          </span>
+          <span>
+            <strong>{adminStats.confirmedMatches}</strong> confirmed matches
+          </span>
+          <span>
+            <strong>{adminStats.matchedPosts}</strong> matched posts
+          </span>
+          <span>
+            <strong>{adminStats.full}</strong> full posts
           </span>
           <span>
             <strong>{adminStats.stale}</strong> stale
