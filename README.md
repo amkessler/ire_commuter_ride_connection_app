@@ -105,7 +105,9 @@ Production is hosted on Vercel:
 https://ire-ride-connection-app.vercel.app
 ```
 
-The Vercel project was created from the CLI and is not currently connected to the GitLab repository for automatic deploys. Deploy manually from this directory with `vercel --prod` only when a deployment has been explicitly requested.
+The Vercel project is connected to the public GitHub repository `amkessler/ire_commuter_ride_connection_app`, with `main` as the production branch. Vercel has `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` configured for Production, Preview, and Development.
+
+Production deploys should come from GitHub pushes to `main` unless a manual deployment is explicitly needed. Run `vercel --prod` from this directory only when a manual production deployment has been explicitly requested.
 
 ## Supabase
 
