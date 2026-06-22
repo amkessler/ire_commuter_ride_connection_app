@@ -10,6 +10,8 @@ The app is designed for practical coordination, not instant booking. It helps pe
 https://ire-ride-connection-app.vercel.app
 ```
 
+![Overview of the sample ride plan and likely matches board](docs/screenshots/app-overview.png)
+
 ## What Attendees Can Do
 
 - Sign in with an email one-time code.
@@ -26,6 +28,8 @@ https://ire-ride-connection-app.vercel.app
 
 Signed-out visitors can explore the app with sample data before signing in.
 
+![Connection board with filters, match labels, contact buttons, and ride cards](docs/screenshots/connection-board.png)
+
 ## How Matching Works
 
 The board compares each attendee's ride profile with available posts. Matching considers:
@@ -37,6 +41,8 @@ The board compares each attendee's ride profile with available posts. Matching c
 - Ride status, including open, pending, matched, and full posts.
 
 Match labels such as `Strong match`, `Good match`, and `Possible match` help sort the board. They do not block real-world flexibility. A post can still be saved or contacted even when the app warns that it is not a perfect fit.
+
+![Example card showing a not-a-fit warning while still allowing save or contact actions](docs/screenshots/not-a-fit-card.png)
 
 ## Key Features
 
@@ -51,6 +57,8 @@ Actions are tracked by conference trip slot. Someone can save a ride for `Thu AM
 ### Private Saved Rides
 
 Saving a post is private. It lets an attendee return to promising options without notifying the post owner.
+
+![Slot picker for privately saving a rideshare split](docs/screenshots/save-slot-dialog.png)
 
 ### Sample Mode
 
